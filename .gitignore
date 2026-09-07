@@ -1,0 +1,5 @@
+.idea/
+.env
+*.exe
+*.test
+coverage.out
