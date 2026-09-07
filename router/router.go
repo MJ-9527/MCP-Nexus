@@ -2,6 +2,7 @@ package router
 
 import (
 	"MCP-Nexus/handler"
+	"MCP-Nexus/middleware"
 	"MCP-Nexus/repository"
 	"MCP-Nexus/service"
 
@@ -10,6 +11,8 @@ import (
 
 func SetupRouter() *gin.Engine {
 	r := gin.Default()
+	r.Use(middleware.RequestID())
+
 	r.GET("/health", handler.Health)
 
 	serverRepo := repository.NewMemoryServerRepository()
