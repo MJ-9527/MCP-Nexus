@@ -64,3 +64,30 @@ type ToolVersion struct {
 	Status      string          `json:"status" db:"status"`
 	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
 }
+
+//网关代理
+
+// McpToolView 返回给前端的工具简略视图
+type McpToolView struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// McpListToolsResponse /gateway/tools/list 的返回体
+type McpListToolsResponse struct {
+	Tools []McpToolView `json:"tools"`
+}
+
+// McpToolCallRequest /gateway/tools/call 请求体
+type McpToolCallRequest struct {
+	Method    string                 `json:"method"`
+	ToolName  string                 `json:"toolName"`
+	Arguments map[string]interface{} `json:"arguments"`
+}
+
+// McpToolCallResponse /gateway/tools/call 上游MCP服务返回透传给调用方
+type McpToolCallResponse struct {
+	Content []map[string]interface{} `json:"content"`
+	IsError bool                     `json:"is_error,omitempty"`
+}
