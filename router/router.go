@@ -7,15 +7,16 @@ import (
 	"MCP-Nexus/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func SetupRouter() *gin.Engine {
+func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
 	r.GET("/health", handler.Health)
 
-	serverRepo := repository.NewMemoryServerRepository()
+	serverRepo := repository.NewPostgresServerRepository(pool)
 	serverService := service.NewServerService(serverRepo)
 	registerHandler := handler.NewRegisterHandler(serverService)
 	queryHandler := handler.NewServerQueryHandler(serverService)
