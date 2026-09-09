@@ -13,22 +13,41 @@ import (
 	"MCP-Nexus/repository"
 )
 
-type ProxyService struct {
-	serverRepo repository.ServerRepository
-	toolRepo   repository.ToolRepository
-	httpClient *http.Client
+// PermissionClient 对接队友的权限服务，用于查询角色允许的工具列表
+type PermissionClient interface {
+	GetAllowedToolNamesByRole(ctx context.Context, role string) ([]string, error)
 }
 
-func NewProxyService(serverRepo repository.ServerRepository, toolRepo repository.ToolRepository) *ProxyService {
+type ProxyService struct {
+	serverRepo    repository.ServerRepository
+	toolRepo      repository.ToolRepository
+	permissionCli PermissionClient
+	httpClient    *http.Client
+}
+
+func NewProxyService(serverRepo repository.ServerRepository,
+	toolRepo repository.ToolRepository,
+	permCli PermissionClient) *ProxyService {
 	return &ProxyService{
-		serverRepo: serverRepo,
-		toolRepo:   toolRepo,
-		httpClient: &http.Client{},
+		serverRepo:    serverRepo,
+		toolRepo:      toolRepo,
+		permissionCli: permCli,
+		httpClient:    &http.Client{},
 	}
 }
 
-// ListTools 获取所有健康在线的工具列表
-func (s *ProxyService) ListTools(ctx context.Context) (*model.McpListToolsResponse, error) {
+// ListTools 获取【在线服务 + 当前角色有权限】的工具列表
+func (s *ProxyService) ListTools(ctx context.Context, role string) (*model.McpListToolsResponse, error) {
+	// 查询当前角色允许访问的工具名集合
+	allowedToolNames, err := s.permissionCli.GetAllowedToolNamesByRole(ctx, role)
+	if err != nil {
+		return nil, fmt.Errorf("query permission error: %w", err)
+	}
+	allowedToolMap := make(map[string]bool)
+	for _, name := range allowedToolNames {
+		allowedToolMap[name] = true
+	}
+
 	tools, err := s.toolRepo.ListAllTools(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list all tools error: %w", err)
@@ -38,8 +57,6 @@ func (s *ProxyService) ListTools(ctx context.Context) (*model.McpListToolsRespon
 	if err != nil {
 		return nil, fmt.Errorf("list server error: %w", err)
 	}
-
-	// 构建在线服务ID集合，业务过滤逻辑放在service
 	onlineServerIDs := make(map[int64]bool)
 	for _, srv := range servers {
 		if srv.HealthStatus == "online" {
@@ -47,9 +64,10 @@ func (s *ProxyService) ListTools(ctx context.Context) (*model.McpListToolsRespon
 		}
 	}
 
+	//双重过滤：服务在线 && 角色拥有权限
 	var viewList []model.McpToolView
 	for _, t := range tools {
-		if onlineServerIDs[t.ServerID] {
+		if onlineServerIDs[t.ServerID] && allowedToolMap[t.Name] {
 			viewList = append(viewList, model.McpToolView{
 				Name:        t.Name,
 				Description: t.Description,
@@ -61,8 +79,24 @@ func (s *ProxyService) ListTools(ctx context.Context) (*model.McpListToolsRespon
 	return &model.McpListToolsResponse{Tools: viewList}, nil
 }
 
-// CallTool 代理转发工具调用
-func (s *ProxyService) CallTool(ctx context.Context, req *model.McpToolCallRequest) (*model.McpToolCallResponse, error) {
+// CallTool 代理转发工具调用，新增RBAC权限前置校验
+func (s *ProxyService) CallTool(ctx context.Context, role string, req *model.McpToolCallRequest) (*model.McpToolCallResponse, error) {
+	// RBAC权限校验
+	allowedToolNames, err := s.permissionCli.GetAllowedToolNamesByRole(ctx, role)
+	if err != nil {
+		return nil, fmt.Errorf("query permission error: %w", err)
+	}
+	hasPermission := false
+	for _, name := range allowedToolNames {
+		if name == req.ToolName {
+			hasPermission = true
+			break
+		}
+	}
+	if !hasPermission {
+		return nil, errors.New("permission denied: agent cannot call this tool")
+	}
+
 	tool, err := s.toolRepo.FindToolByName(ctx, req.ToolName)
 	if err != nil {
 		return nil, fmt.Errorf("find tool error: %w", err)

@@ -19,7 +19,15 @@ func NewProxyHandler(proxySvc *service.ProxyService) *ProxyHandler {
 
 // ListTools POST /gateway/tools/list
 func (h *ProxyHandler) ListTools(c *gin.Context) {
-	resp, err := h.proxyService.ListTools(c.Request.Context())
+	// 从gin上下文获取JWT中间件注入的agent_role
+	roleVal, exists := c.Get("agent_role")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized, missing role"})
+		return
+	}
+	role := roleVal.(string)
+
+	resp, err := h.proxyService.ListTools(c.Request.Context(), role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -35,8 +43,21 @@ func (h *ProxyHandler) CallTool(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.proxyService.CallTool(c.Request.Context(), &req)
+	// 获取角色
+	roleVal, exists := c.Get("agent_role")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized, missing role"})
+		return
+	}
+	role := roleVal.(string)
+
+	resp, err := h.proxyService.CallTool(c.Request.Context(), role, &req)
 	if err != nil {
+		// 权限不足单独返回403
+		if err.Error() == "permission denied: agent cannot call this tool" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
