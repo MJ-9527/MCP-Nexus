@@ -23,6 +23,7 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
+	serverStatusHandler := handler.NewServerStatusHandler(serverService)
 	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
 	toolQueryHandler := handler.NewToolQueryHandler(toolService)
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)
@@ -32,6 +33,8 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	servers.POST("", serverRegisterHandler.RegisterServer)
 	servers.GET("", serverQueryHandler.ListServers)
 	servers.GET("/:id", serverQueryHandler.GetServer)
+	servers.POST("/:id/activate", serverStatusHandler.ActivateServer)
+	servers.POST("/:id/offline", serverStatusHandler.OfflineServer)
 
 	tools := api.Group("/tools")
 	tools.POST("", toolRegisterHandler.RegisterTool)

@@ -4,9 +4,10 @@ import (
 	"MCP-Nexus/repository"
 	"MCP-Nexus/service"
 	"errors"
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
 )
 
 type ToolQueryHandler struct{ service *service.ToolService }

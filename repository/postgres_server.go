@@ -60,6 +60,18 @@ func (r *PostgresServerRepository) List(ctx context.Context) ([]*model.MCPServer
 	return servers, nil
 }
 
+func (r *PostgresServerRepository) UpdateStatus(ctx context.Context, id int64, status string) error {
+	const query = `UPDATE mcp_servers SET status = $1, updated_at = NOW() WHERE id = $2`
+	result, err := r.pool.Exec(ctx, query, status, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *PostgresServerRepository) findOne(ctx context.Context, query string, arg any) (*model.MCPServer, error) {
 	return scanServer(r.pool.QueryRow(ctx, query, arg))
 }

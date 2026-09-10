@@ -77,3 +77,14 @@ func (r *MemoryServerRepository) FindByID(_ context.Context, id int64) (*model.M
 	}
 	return nil, ErrNotFound
 }
+
+func (r *MemoryServerRepository) UpdateStatus(_ context.Context, id int64, status string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	server, ok := r.servers[id]
+	if !ok {
+		return ErrNotFound
+	}
+	server.Status = status
+	return nil
+}
