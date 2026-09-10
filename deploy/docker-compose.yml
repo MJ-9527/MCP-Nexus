@@ -19,6 +19,39 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  demo-service:
+    build:
+      context: ../examples/demo-service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: "8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f -s http://localhost:8081/health | jq -r .status"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  # gateway:
+  #   build:
+  #     context: ../gateway
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     PORT: "8080"
+  #   depends_on:
+  #     demo-service:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
 
 volumes:
   postgres_data:
