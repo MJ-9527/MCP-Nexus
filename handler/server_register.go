@@ -10,13 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type RegisterHandler struct{ service *service.ServerService }
+type ServerRegisterHandler struct{ service *service.ServerService }
 
-func NewRegisterHandler(s *service.ServerService) *RegisterHandler {
-	return &RegisterHandler{service: s}
+func NewRegisterHandler(s *service.ServerService) *ServerRegisterHandler {
+	return &ServerRegisterHandler{service: s}
 }
 
-func (h *RegisterHandler) RegisterServer(c *gin.Context) {
+func (h *ServerRegisterHandler) RegisterServer(c *gin.Context) {
 	var req model.RegisterServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, "请求参数无效")

@@ -18,11 +18,26 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 
 	serverRepo := repository.NewPostgresServerRepository(pool)
 	serverService := service.NewServerService(serverRepo)
-	registerHandler := handler.NewRegisterHandler(serverService)
-	queryHandler := handler.NewServerQueryHandler(serverService)
-	r.POST("/api/servers", registerHandler.RegisterServer)
+	toolRepo := repository.NewPostgresToolRepository(pool)
+	toolService := service.NewToolService(toolRepo, serverRepo)
 
-	r.GET("/api/servers", queryHandler.ListServers)
-	r.GET("/api/servers/:id", queryHandler.GetServer)
+	serverRegisterHandler := handler.NewRegisterHandler(serverService)
+	serverQueryHandler := handler.NewServerQueryHandler(serverService)
+	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
+	toolQueryHandler := handler.NewToolQueryHandler(toolService)
+	toolPublishHandler := handler.NewToolPublishHandler(toolService)
+
+	api := r.Group("/api")
+	servers := api.Group("/servers")
+	servers.POST("", serverRegisterHandler.RegisterServer)
+	servers.GET("", serverQueryHandler.ListServers)
+	servers.GET("/:id", serverQueryHandler.GetServer)
+
+	tools := api.Group("/tools")
+	tools.POST("", toolRegisterHandler.RegisterTool)
+	tools.GET("", toolQueryHandler.ListTools)
+	tools.GET("/:id", toolQueryHandler.GetTool)
+	tools.POST("/:id/publish", toolPublishHandler.PublishTool)
+	tools.POST("/:id/offline", toolPublishHandler.OfflineTool)
 	return r
 }
