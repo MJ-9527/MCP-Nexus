@@ -7,32 +7,40 @@ import (
 	"MCP-Nexus/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func SetupRouter() *gin.Engine {
+func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
 	r.GET("/health", handler.Health)
 
-	serverRepo := repository.NewMemoryServerRepository()
+	serverRepo := repository.NewPostgresServerRepository(pool)
 	serverService := service.NewServerService(serverRepo)
-	registerHandler := handler.NewRegisterHandler(serverService)
-	queryHandler := handler.NewServerQueryHandler(serverService)
-	r.POST("/api/servers", registerHandler.RegisterServer)
+	toolRepo := repository.NewPostgresToolRepository(pool)
+	toolService := service.NewToolService(toolRepo, serverRepo)
 
-	r.GET("/api/servers", queryHandler.ListServers)
-	r.GET("/api/servers/:id", queryHandler.GetServer)
+	serverRegisterHandler := handler.NewRegisterHandler(serverService)
+	serverQueryHandler := handler.NewServerQueryHandler(serverService)
+	serverStatusHandler := handler.NewServerStatusHandler(serverService)
+	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
+	toolQueryHandler := handler.NewToolQueryHandler(toolService)
+	toolPublishHandler := handler.NewToolPublishHandler(toolService)
 
-	//MCP网关代理
-	toolRepo := repository.NewMemoryToolRepository()
-	proxySvc := service.NewProxyService(serverRepo, toolRepo)
-	proxyHandler := handler.NewProxyHandler(proxySvc)
+	api := r.Group("/api")
+	servers := api.Group("/servers")
+	servers.POST("", serverRegisterHandler.RegisterServer)
+	servers.GET("", serverQueryHandler.ListServers)
+	servers.GET("/:id", serverQueryHandler.GetServer)
+	servers.POST("/:id/activate", serverStatusHandler.ActivateServer)
+	servers.POST("/:id/offline", serverStatusHandler.OfflineServer)
 
-	gatewayGroup := r.Group("/gateway")
-	{
-		gatewayGroup.POST("/tools/list", proxyHandler.ListTools)
-		gatewayGroup.POST("/tools/call", proxyHandler.CallTool)
-	}
+	tools := api.Group("/tools")
+	tools.POST("", toolRegisterHandler.RegisterTool)
+	tools.GET("", toolQueryHandler.ListTools)
+	tools.GET("/:id", toolQueryHandler.GetTool)
+	tools.POST("/:id/publish", toolPublishHandler.PublishTool)
+	tools.POST("/:id/offline", toolPublishHandler.OfflineTool)
 	return r
 }

@@ -5,9 +5,18 @@ import (
 	"context"
 )
 
+type ToolFilter struct {
+	ServerID     *int64
+	Name         string
+	Category     string
+	Published    *bool
+	HealthStatus string
+}
+
 type ToolRepository interface {
-	// ListAllTools 返回全部工具原始数据，不做server状态过滤
-	ListAllTools(ctx context.Context) ([]*model.MCPTool, error)
-	// FindToolByName 根据工具名仅查询工具实体
-	FindToolByName(ctx context.Context, toolName string) (*model.MCPTool, error)
+	Create(ctx context.Context, tool *model.MCPTool) error
+	FindByID(ctx context.Context, id int64) (*model.MCPTool, error)
+	FindByName(ctx context.Context, serverID int64, name string) (*model.MCPTool, error)
+	List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, error)
+	UpdatePublished(ctx context.Context, id int64, published bool) error
 }

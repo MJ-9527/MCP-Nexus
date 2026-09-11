@@ -55,6 +55,16 @@ type MCPTool struct {
 	CreatedAt    time.Time       `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at" db:"updated_at"`
 }
+
+type RegisterToolRequest struct {
+	ServerID    int64           `json:"server_id" binding:"required"`
+	Name        string          `json:"name" binding:"required,max=100"`
+	Description string          `json:"description" binding:"max=1000"`
+	Category    string          `json:"category" binding:"required,max=100"`
+	Tags        []string        `json:"tags"`
+	InputSchema json.RawMessage `json:"input_schema" binding:"required"`
+	Version     string          `json:"version" binding:"required,max=50"`
+}
 type ToolVersion struct {
 	ID          int64           `json:"id" db:"id"`
 	ToolID      int64           `json:"tool_id" db:"tool_id"`
