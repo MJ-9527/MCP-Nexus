@@ -1,6 +1,9 @@
 package router
 
 import (
+	"time"
+
+	"MCP-Nexus/client"
 	"MCP-Nexus/handler"
 	"MCP-Nexus/middleware"
 	"MCP-Nexus/repository"
@@ -18,12 +21,14 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 
 	serverRepo := repository.NewPostgresServerRepository(pool)
 	serverService := service.NewServerService(serverRepo)
+	serverHealthService := service.NewServerHealthService(serverRepo, client.NewHealthClient(5*time.Second))
 	toolRepo := repository.NewPostgresToolRepository(pool)
 	toolService := service.NewToolService(toolRepo, serverRepo)
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
 	serverStatusHandler := handler.NewServerStatusHandler(serverService)
+	serverHealthHandler := handler.NewServerHealthHandler(serverHealthService)
 	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
 	toolQueryHandler := handler.NewToolQueryHandler(toolService)
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)
@@ -35,6 +40,7 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	servers.GET("/:id", serverQueryHandler.GetServer)
 	servers.POST("/:id/activate", serverStatusHandler.ActivateServer)
 	servers.POST("/:id/offline", serverStatusHandler.OfflineServer)
+	servers.POST("/:id/health-check", serverHealthHandler.CheckServer)
 
 	tools := api.Group("/tools")
 	tools.POST("", toolRegisterHandler.RegisterTool)

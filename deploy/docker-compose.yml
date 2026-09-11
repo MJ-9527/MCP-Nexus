@@ -5,8 +5,10 @@ services:
     restart: unless-stopped
     env_file:
       - ../.env
+    # 5432 is reserved by Windows on this machine; keep PostgreSQL's
+    # container port unchanged and expose it on a free host port.
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../db/migrations:/docker-entrypoint-initdb.d:ro

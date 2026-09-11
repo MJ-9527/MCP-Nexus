@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 )
 
 type MemoryServerRepository struct {
@@ -86,5 +87,17 @@ func (r *MemoryServerRepository) UpdateStatus(_ context.Context, id int64, statu
 		return ErrNotFound
 	}
 	server.Status = status
+	return nil
+}
+
+func (r *MemoryServerRepository) UpdateHealth(_ context.Context, id int64, healthStatus string, checkedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	server, ok := r.servers[id]
+	if !ok {
+		return ErrNotFound
+	}
+	server.HealthStatus = healthStatus
+	server.LastHealthCheckAt = &checkedAt
 	return nil
 }
