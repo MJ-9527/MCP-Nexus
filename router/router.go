@@ -37,16 +37,16 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	servers := api.Group("/servers")
 	servers.POST("", serverRegisterHandler.RegisterServer)
 	servers.GET("", serverQueryHandler.ListServers)
-	servers.GET("/:id", serverQueryHandler.GetServer)
-	servers.POST("/:id/activate", serverStatusHandler.ActivateServer)
-	servers.POST("/:id/offline", serverStatusHandler.OfflineServer)
-	servers.POST("/:id/health-check", serverHealthHandler.CheckServer)
+	servers.GET("/:serversId", serverQueryHandler.GetServer)
+	servers.POST("/::serversId/activate", serverStatusHandler.ActivateServer)
+	servers.POST("/::serversId/offline", serverStatusHandler.OfflineServer)
+	servers.POST("/::serversId/health-check", serverHealthHandler.CheckServer)
 
 	tools := api.Group("/tools")
 	tools.POST("", toolRegisterHandler.RegisterTool)
 	tools.GET("", toolQueryHandler.ListTools)
-	tools.GET("/:id", toolQueryHandler.GetTool)
-	tools.POST("/:id/publish", toolPublishHandler.PublishTool)
-	tools.POST("/:id/offline", toolPublishHandler.OfflineTool)
+	tools.GET("/:toolId", toolQueryHandler.GetTool)
+	tools.POST("/:toolId/publish", toolPublishHandler.PublishTool)
+	tools.POST("/:toolId/offline", toolPublishHandler.OfflineTool)
 	return r
 }
