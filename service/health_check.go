@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"MCP-Nexus/client"
+	"MCP-Nexus/model"
 	"MCP-Nexus/repository"
 )
 
@@ -40,7 +41,72 @@ func (s *HealthCheckService) HealthCheck(ctx context.Context, id int64) (*Health
 		}
 		return nil, err
 	}
+	return s.check(ctx, server), nil
+}
 
+// CheckAll 对全部 Server 执行一次健康检查。
+func (s *HealthCheckService) CheckAll(ctx context.Context) ([]*HealthCheckResult, error) {
+	servers, err := s.servers.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*HealthCheckResult, 0, len(servers))
+	for _, server := range servers {
+		results = append(results, s.check(ctx, server))
+	}
+	return results, nil
+}
+
+// StartBackground 启动后台健康检查：先立即检查一次，之后每 interval 检查一次，直到 ctx 取消。
+func (s *HealthCheckService) StartBackground(ctx context.Context, interval time.Duration, logf func(format string, args ...any)) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	if logf == nil {
+		logf = func(format string, args ...any) {}
+	}
+
+	go func() {
+		run := func() {
+			defer func() {
+				if e := recover(); e != nil {
+					logf("health-check panic recovered: %v", e)
+				}
+			}()
+
+			// 每一轮探测独立超时，避免某个 Server 拖垮整个定时任务。
+			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			results, err := s.CheckAll(probeCtx)
+			if err != nil {
+				logf("health-check: list servers failed: %v", err)
+				return
+			}
+			logf("health-check: checked %d servers", len(results))
+			for _, r := range results {
+				logf("health-check: server_id=%d status=%s latency=%dms", r.ServerID, r.HealthStatus, r.LatencyMS)
+			}
+		}
+
+		run() // 启动时检查一次
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				logf("health-check background stopped")
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
+}
+
+// check 探测单个 Server 并生成结果（不含持久化）。
+func (s *HealthCheckService) check(ctx context.Context, server *model.MCPServer) *HealthCheckResult {
 	res := s.client.Check(ctx, server.Endpoint)
 	checkedAt := s.now()
 
@@ -53,11 +119,9 @@ func (s *HealthCheckService) HealthCheck(ctx context.Context, id int64) (*Health
 
 	// TODO(成员A)：等 ServerRepository 提供 UpdateHealthStatus 方法后，把
 	// health_status 与 last_health_check_at 持久化到 PostgreSQL：
-	//   if err := s.servers.UpdateHealthStatus(ctx, server.ID, result.HealthStatus, checkedAt); err != nil {
-	//       return nil, err
-	//   }
+	//   _ = s.servers.UpdateHealthStatus(ctx, server.ID, result.HealthStatus, checkedAt)
 
-	return result, nil
+	return result
 }
 
 // statusFromErr 把探测错误映射为 health_status：

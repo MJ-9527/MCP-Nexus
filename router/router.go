@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter() *gin.Engine {
+func SetupRouter() (*gin.Engine, *service.HealthCheckService) {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
@@ -33,5 +33,5 @@ func SetupRouter() *gin.Engine {
 	healthCheckHandler := handler.NewHealthCheckHandler(healthCheckService)
 	r.POST("/api/servers/:id/health-check", healthCheckHandler.HealthCheck)
 
-	return r
+	return r, healthCheckService
 }
