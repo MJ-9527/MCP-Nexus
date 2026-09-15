@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- 容器内 IPv6 不可用，替换默认的 :: 为 IPv4 全地址 -->
+    <listen_host replace="replace">0.0.0.0</listen_host>
+</clickhouse>

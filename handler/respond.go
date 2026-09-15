@@ -24,6 +24,16 @@ func respondError(c *gin.Context, status int, message string) {
 	})
 }
 
+// respondErrorCode 用业务错误码返回错误，便于网关对齐文档定义的错误码。
+func respondErrorCode(c *gin.Context, status int, code, message string) {
+	c.JSON(status, model.APIResponse{
+		Code:      code,
+		Message:   message,
+		RequestID: getRequestID(c),
+		Data:      nil,
+	})
+}
+
 func httpCode(status int) string {
 	switch status {
 	case 400:

@@ -25,7 +25,12 @@ func NewPostgresToolRepository(pool *pgxpool.Pool) *PostgresToolRepository {
 func (r *PostgresToolRepository) Create(ctx context.Context, tool *model.MCPTool) error {
 	const query = `INSERT INTO mcp_tools (server_id, name, description, category, tags, input_schema, version, published, health_status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, call_count, created_at, updated_at`
-	err := r.pool.QueryRow(ctx, query, tool.ServerID, tool.Name, tool.Description, tool.Category, tool.Tags, tool.InputSchema, tool.Version, tool.Published, tool.HealthStatus).Scan(&tool.ID, &tool.CallCount, &tool.CreatedAt, &tool.UpdatedAt)
+	// tags 列 NOT NULL，nil 切片写空数组
+	tags := tool.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	err := r.pool.QueryRow(ctx, query, tool.ServerID, tool.Name, tool.Description, tool.Category, tags, tool.InputSchema, tool.Version, tool.Published, tool.HealthStatus).Scan(&tool.ID, &tool.CallCount, &tool.CreatedAt, &tool.UpdatedAt)
 	return mapToolError(err)
 }
 
@@ -37,8 +42,13 @@ func (r *PostgresToolRepository) FindByName(ctx context.Context, serverID int64,
 	return r.findOne(ctx, `SELECT `+toolColumns+` FROM mcp_tools WHERE server_id = $1 AND name = $2`, serverID, name)
 }
 
-func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, error) {
-	query := `SELECT ` + toolColumns + ` FROM mcp_tools`
+// FindPublishedByName 跨 Server 按名称精确查找第一个已发布工具，供网关调用使用。
+func (r *PostgresToolRepository) FindPublishedByName(ctx context.Context, name string) (*model.MCPTool, error) {
+	return r.findOne(ctx, `SELECT `+toolColumns+` FROM mcp_tools WHERE name = $1 AND published = TRUE ORDER BY id LIMIT 1`, name)
+}
+
+// buildToolWhere 组装过滤条件（Keyword 同时匹配 name/description）
+func buildToolWhere(filter ToolFilter) (string, []any) {
 	conditions, args := make([]string, 0), make([]any, 0)
 	if filter.ServerID != nil {
 		args = append(args, *filter.ServerID)
@@ -60,10 +70,29 @@ func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([
 		args = append(args, filter.HealthStatus)
 		conditions = append(conditions, "health_status = $"+strconv.Itoa(len(args)))
 	}
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
+	if filter.ExcludeOffline {
+		conditions = append(conditions, "health_status != 'offline'")
 	}
-	query += " ORDER BY id"
+	if filter.Keyword != "" {
+		args = append(args, "%"+filter.Keyword+"%")
+		n := strconv.Itoa(len(args))
+		conditions = append(conditions, "(name ILIKE $"+n+" OR description ILIKE $"+n+")")
+	}
+	if len(conditions) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(conditions, " AND "), args
+}
+
+func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, error) {
+	where, args := buildToolWhere(filter)
+	query := `SELECT ` + toolColumns + ` FROM mcp_tools` + where
+	if filter.PageSize > 0 {
+		query += " ORDER BY id LIMIT $" + strconv.Itoa(len(args)+1) + " OFFSET $" + strconv.Itoa(len(args)+2)
+		args = append(args, filter.PageSize, filter.Offset())
+	} else {
+		query += " ORDER BY id"
+	}
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -81,6 +110,13 @@ func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([
 		return nil, err
 	}
 	return tools, nil
+}
+
+func (r *PostgresToolRepository) Count(ctx context.Context, filter ToolFilter) (int64, error) {
+	where, args := buildToolWhere(filter)
+	var total int64
+	err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM mcp_tools"+where, args...).Scan(&total)
+	return total, err
 }
 
 func (r *PostgresToolRepository) UpdatePublished(ctx context.Context, id int64, published bool) error {

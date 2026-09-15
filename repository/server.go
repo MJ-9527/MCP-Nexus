@@ -4,11 +4,13 @@ import (
 	"MCP-Nexus/model"
 	"context"
 	"errors"
+	"time"
 )
 
 var (
-	ErrNotFound = errors.New("not found")
-	ErrConflict = errors.New("already exists")
+	ErrNotFound         = errors.New("not found")
+	ErrConflict         = errors.New("already exists")
+	ErrInvalidParameter = errors.New("invalid parameter")
 )
 
 type ServerRepository interface {
@@ -18,4 +20,6 @@ type ServerRepository interface {
 	List(ctx context.Context) ([]*model.MCPServer, error)
 	FindByID(ctx context.Context, id int64) (*model.MCPServer, error)
 	UpdateStatus(ctx context.Context, id int64, status string) error
+	// UpdateHealth 更新健康状态与最近检查时间。
+	UpdateHealth(ctx context.Context, id int64, healthStatus string, checkedAt time.Time) error
 }

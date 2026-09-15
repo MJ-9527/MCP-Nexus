@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.m.daocloud.io/library/postgres:16-alpine
     container_name: mcp-nexus-postgres
     restart: unless-stopped
     env_file:
@@ -20,5 +20,132 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: docker.m.daocloud.io/library/redis:7-alpine
+    container_name: mcp-nexus-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  clickhouse:
+    image: docker.m.daocloud.io/clickhouse/clickhouse-server:24-alpine
+    container_name: mcp-nexus-clickhouse
+    restart: unless-stopped
+    ports:
+      - "9000:9000"  # native TCP（clickhouse-go 默认走这个）
+      - "8123:8123"  # HTTP 调试用
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ../db/clickhouse:/docker-entrypoint-initdb.d:ro
+      - ../db/clickhouse/listen.xml:/etc/clickhouse-server/config.d/listen.xml:ro
+    healthcheck:
+      # WSL2 下 HTTP 8123 端口转发间歇失联，改用 native client 探活（gateway 走 native 9000）
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  demo-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: mcp-nexus-demo
+    restart: unless-stopped
+    command: ["/demo-service"]
+    ports:
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  file-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: mcp-nexus-file
+    restart: unless-stopped
+    command: ["/file-server"]
+    environment:
+      - MCP_FILE_ROOT=/data
+    volumes:
+      - file_data:/data
+    ports:
+      - "9002:9002"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9002/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  http-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: mcp-nexus-http
+    restart: unless-stopped
+    command: ["/http-server"]
+    ports:
+      - "9003:9003"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9003/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  db-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: mcp-nexus-db
+    restart: unless-stopped
+    command: ["/db-server"]
+    ports:
+      - "9004:9004"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9004/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: mcp-nexus-gateway
+    restart: unless-stopped
+    command: ["/gateway"]
+    env_file:
+      - ../.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_ADDR=redis:6379
+      - CLICKHOUSE_ADDR=clickhouse:9000
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      demo-service:
+        condition: service_healthy
+      file-server:
+        condition: service_healthy
+      http-server:
+        condition: service_healthy
+      db-server:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  clickhouse_data:
+  file_data:

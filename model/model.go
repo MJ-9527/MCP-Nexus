@@ -26,7 +26,7 @@ type MCPServer struct {
 	Description       string     `json:"description" db:"description"`
 	Endpoint          string     `json:"endpoint" db:"endpoint"`
 	Version           string     `json:"version" db:"version"`
-	OwnerID           int64      `json:"owner_id" db:"owner_id"`
+	OwnerID           *int64     `json:"owner_id" db:"owner_id"`
 	Status            string     `json:"status" db:"status"`
 	HealthStatus      string     `json:"health_status" db:"health_status"`
 	LastHealthCheckAt *time.Time `json:"last_health_check_at,omitempty" db:"last_health_check_at"`
@@ -38,7 +38,7 @@ type RegisterServerRequest struct {
 	Description string `json:"description" binding:"max=1000"`
 	Endpoint    string `json:"endpoint" binding:"required,url"`
 	Version     string `json:"version" binding:"required,max=50"`
-	OwnerID     int64  `json:"owner_id"`
+	OwnerID     *int64 `json:"owner_id"`
 }
 type MCPTool struct {
 	ID           int64           `json:"id" db:"id"`
@@ -73,6 +73,13 @@ type ToolVersion struct {
 	Changelog   string          `json:"changelog" db:"changelog"`
 	Status      string          `json:"status" db:"status"`
 	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
+}
+
+// SetPermissionRequest 配置工具权限请求体
+type SetPermissionRequest struct {
+	Role     string `json:"role" binding:"required"`
+	ToolName string `json:"tool_name" binding:"required"`
+	Action   string `json:"action" binding:"required"` // grant 或 revoke
 }
 
 //网关代理
