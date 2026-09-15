@@ -1,6 +1,9 @@
 package router
 
 import (
+	"time"
+
+	"MCP-Nexus/client"
 	"MCP-Nexus/handler"
 	"MCP-Nexus/middleware"
 	"MCP-Nexus/repository"
@@ -18,12 +21,14 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 
 	serverRepo := repository.NewPostgresServerRepository(pool)
 	serverService := service.NewServerService(serverRepo)
+	serverHealthService := service.NewServerHealthService(serverRepo, client.NewHealthClient(5*time.Second))
 	toolRepo := repository.NewPostgresToolRepository(pool)
 	toolService := service.NewToolService(toolRepo, serverRepo)
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
 	serverStatusHandler := handler.NewServerStatusHandler(serverService)
+	serverHealthHandler := handler.NewServerHealthHandler(serverHealthService)
 	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
 	toolQueryHandler := handler.NewToolQueryHandler(toolService)
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)
@@ -32,15 +37,29 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	servers := api.Group("/servers")
 	servers.POST("", serverRegisterHandler.RegisterServer)
 	servers.GET("", serverQueryHandler.ListServers)
-	servers.GET("/:id", serverQueryHandler.GetServer)
-	servers.POST("/:id/activate", serverStatusHandler.ActivateServer)
-	servers.POST("/:id/offline", serverStatusHandler.OfflineServer)
+	servers.GET("/:serversId", serverQueryHandler.GetServer)
+	servers.POST("/::serversId/activate", serverStatusHandler.ActivateServer)
+	servers.POST("/::serversId/offline", serverStatusHandler.OfflineServer)
+	servers.POST("/::serversId/health-check", serverHealthHandler.CheckServer)
 
+	r.GET("/api/servers", queryHandler.ListServers)
+	r.GET("/api/servers/:id", queryHandler.GetServer)
+
+	//MCP网关代理
+	toolRepo := repository.NewMemoryToolRepository()
+	proxySvc := service.NewProxyService(serverRepo, toolRepo)
+	proxyHandler := handler.NewProxyHandler(proxySvc)
+
+	gatewayGroup := r.Group("/gateway")
+	{
+		gatewayGroup.POST("/tools/list", proxyHandler.ListTools)
+		gatewayGroup.POST("/tools/call", proxyHandler.CallTool)
+	}
 	tools := api.Group("/tools")
 	tools.POST("", toolRegisterHandler.RegisterTool)
 	tools.GET("", toolQueryHandler.ListTools)
-	tools.GET("/:id", toolQueryHandler.GetTool)
-	tools.POST("/:id/publish", toolPublishHandler.PublishTool)
-	tools.POST("/:id/offline", toolPublishHandler.OfflineTool)
+	tools.GET("/:toolId", toolQueryHandler.GetTool)
+	tools.POST("/:toolId/publish", toolPublishHandler.PublishTool)
+	tools.POST("/:toolId/offline", toolPublishHandler.OfflineTool)
 	return r
 }

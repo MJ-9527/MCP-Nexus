@@ -4,6 +4,7 @@ import (
 	"MCP-Nexus/model"
 	"context"
 	"errors"
+	"time"
 )
 
 var (
@@ -18,4 +19,5 @@ type ServerRepository interface {
 	List(ctx context.Context) ([]*model.MCPServer, error)
 	FindByID(ctx context.Context, id int64) (*model.MCPServer, error)
 	UpdateStatus(ctx context.Context, id int64, status string) error
+	UpdateHealth(ctx context.Context, id int64, healthStatus string, checkedAt time.Time) error
 }

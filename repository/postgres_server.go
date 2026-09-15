@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"MCP-Nexus/model"
 
@@ -63,6 +64,18 @@ func (r *PostgresServerRepository) List(ctx context.Context) ([]*model.MCPServer
 func (r *PostgresServerRepository) UpdateStatus(ctx context.Context, id int64, status string) error {
 	const query = `UPDATE mcp_servers SET status = $1, updated_at = NOW() WHERE id = $2`
 	result, err := r.pool.Exec(ctx, query, status, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresServerRepository) UpdateHealth(ctx context.Context, id int64, healthStatus string, checkedAt time.Time) error {
+	const query = `UPDATE mcp_servers SET health_status = $1, last_health_check_at = $2, updated_at = NOW() WHERE id = $3`
+	result, err := r.pool.Exec(ctx, query, healthStatus, checkedAt, id)
 	if err != nil {
 		return err
 	}

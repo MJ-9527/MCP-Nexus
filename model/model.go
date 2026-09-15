@@ -16,9 +16,26 @@ type User struct {
 	Username     string    `json:"username" db:"username"`
 	PasswordHash string    `json:"-" db:"password_hash"`
 	Role         string    `json:"role" db:"role"`
+	Roles        []string  `json:"roles,omitempty" db:"-"`
 	Status       string    `json:"status" db:"status"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type Role struct {
+	ID          int64     `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	Description string    `json:"description" db:"description"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+}
+
+type ToolPermission struct {
+	ID        int64     `json:"id" db:"id"`
+	ToolID    int64     `json:"tool_id" db:"tool_id"`
+	UserID    *int64    `json:"user_id,omitempty" db:"user_id"`
+	RoleID    *int64    `json:"role_id,omitempty" db:"role_id"`
+	Action    string    `json:"action" db:"action"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 type MCPServer struct {
 	ID                int64      `json:"id" db:"id"`
