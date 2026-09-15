@@ -24,6 +24,9 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	serverHealthService := service.NewServerHealthService(serverRepo, client.NewHealthClient(5*time.Second))
 	toolRepo := repository.NewPostgresToolRepository(pool)
 	toolService := service.NewToolService(toolRepo, serverRepo)
+	userRepo := repository.NewPostgresUserRepository(pool)
+	permissionRepo := repository.NewPostgresToolPermissionRepository(pool)
+	permissionService := service.NewToolPermissionService(permissionRepo, toolRepo, userRepo)
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
@@ -32,21 +35,29 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
 	toolQueryHandler := handler.NewToolQueryHandler(toolService)
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)
+	permissionHandler := handler.NewToolPermissionHandler(permissionService)
 
 	api := r.Group("/api")
 	servers := api.Group("/servers")
 	servers.POST("", serverRegisterHandler.RegisterServer)
 	servers.GET("", serverQueryHandler.ListServers)
-	servers.GET("/:serversId", serverQueryHandler.GetServer)
-	servers.POST("/::serversId/activate", serverStatusHandler.ActivateServer)
-	servers.POST("/::serversId/offline", serverStatusHandler.OfflineServer)
-	servers.POST("/::serversId/health-check", serverHealthHandler.CheckServer)
+	servers.GET("/:id", serverQueryHandler.GetServer)
+	servers.POST("/:id/activate", serverStatusHandler.ActivateServer)
+	servers.POST("/:id/offline", serverStatusHandler.OfflineServer)
+	servers.POST("/:id/health-check", serverHealthHandler.CheckServer)
 
 	tools := api.Group("/tools")
 	tools.POST("", toolRegisterHandler.RegisterTool)
 	tools.GET("", toolQueryHandler.ListTools)
-	tools.GET("/:toolId", toolQueryHandler.GetTool)
-	tools.POST("/:toolId/publish", toolPublishHandler.PublishTool)
-	tools.POST("/:toolId/offline", toolPublishHandler.OfflineTool)
+	tools.GET("/:id", toolQueryHandler.GetTool)
+	tools.POST("/:id/publish", toolPublishHandler.PublishTool)
+	tools.POST("/:id/offline", toolPublishHandler.OfflineTool)
+
+	permissions := tools.Group("/:id/permissions")
+	permissions.POST("", permissionHandler.GrantPermission)
+	permissions.DELETE("", permissionHandler.RevokePermission)
+	permissions.GET("", permissionHandler.ListPermissions)
+	permissions.GET("/check", permissionHandler.CheckPermission)
+
 	return r
 }

@@ -78,6 +78,7 @@ type RegisterToolRequest struct {
 	Name        string          `json:"name" binding:"required,max=100"`
 	Description string          `json:"description" binding:"max=1000"`
 	Category    string          `json:"category" binding:"required,max=100"`
+	Tags        []string        `json:"tags"`
 	InputSchema json.RawMessage `json:"input_schema" binding:"required"`
 	Version     string          `json:"version" binding:"required,max=50"`
 }

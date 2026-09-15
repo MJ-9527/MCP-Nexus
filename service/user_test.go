@@ -27,6 +27,17 @@ func (f *fakeUserRepository) FindByUsername(_ context.Context, username string) 
 	}
 	return user, nil
 }
+func (f *fakeUserRepository) FindByID(_ context.Context, id int64) (*model.User, error) {
+	for _, user := range f.users {
+		if user.ID == id {
+			return user, nil
+		}
+	}
+	return nil, repository.ErrNotFound
+}
+func (f *fakeUserRepository) FindRoleByID(context.Context, int64) (*model.Role, error) {
+	return nil, repository.ErrNotFound
+}
 func (f *fakeUserRepository) CreateRole(context.Context, *model.Role) error  { return nil }
 func (f *fakeUserRepository) AssignRole(context.Context, int64, int64) error { return nil }
 
