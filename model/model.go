@@ -37,6 +37,28 @@ type ToolPermission struct {
 	Action    string    `json:"action" db:"action"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
+
+type AuditLog struct {
+	ID           int64     `json:"id" db:"id"`
+	RequestID    string    `json:"request_id" db:"request_id"`
+	UserID       *int64    `json:"user_id,omitempty" db:"user_id"`
+	ToolID       *int64    `json:"tool_id,omitempty" db:"tool_id"`
+	DurationMS   int64     `json:"duration_ms" db:"duration_ms"`
+	Status       string    `json:"status" db:"status"`
+	DeniedReason string    `json:"denied_reason,omitempty" db:"denied_reason"`
+	ParamsDigest string    `json:"params_digest,omitempty" db:"params_digest"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+}
+
+type CreateAuditLogRequest struct {
+	RequestID    string `json:"request_id" binding:"required"`
+	UserID       *int64 `json:"user_id"`
+	ToolID       *int64 `json:"tool_id"`
+	DurationMS   int64  `json:"duration_ms"`
+	Status       string `json:"status" binding:"required"`
+	DeniedReason string `json:"denied_reason"`
+	Parameters   any    `json:"parameters"`
+}
 type MCPServer struct {
 	ID                int64      `json:"id" db:"id"`
 	Name              string     `json:"name" db:"name"`

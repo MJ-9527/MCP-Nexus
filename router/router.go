@@ -27,6 +27,8 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	userRepo := repository.NewPostgresUserRepository(pool)
 	permissionRepo := repository.NewPostgresToolPermissionRepository(pool)
 	permissionService := service.NewToolPermissionService(permissionRepo, toolRepo, userRepo)
+	auditRepo := repository.NewPostgresAuditLogRepository(pool)
+	auditService := service.NewAuditLogService(auditRepo)
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
@@ -36,6 +38,7 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	toolQueryHandler := handler.NewToolQueryHandler(toolService)
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)
 	permissionHandler := handler.NewToolPermissionHandler(permissionService)
+	auditHandler := handler.NewAuditLogHandler(auditService)
 
 	api := r.Group("/api")
 	servers := api.Group("/servers")
@@ -58,6 +61,10 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	permissions.DELETE("", permissionHandler.RevokePermission)
 	permissions.GET("", permissionHandler.ListPermissions)
 	permissions.GET("/check", permissionHandler.CheckPermission)
+
+	auditLogs := api.Group("/audit-logs")
+	auditLogs.POST("", auditHandler.Create)
+	auditLogs.GET("", auditHandler.List)
 
 	return r
 }
