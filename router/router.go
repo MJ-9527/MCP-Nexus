@@ -10,28 +10,48 @@ import (
 	"MCP-Nexus/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func SetupRouter() (*gin.Engine, *service.HealthCheckService) {
+func SetupRouter(pool *pgxpool.Pool) (*gin.Engine, *service.HealthCheckService) {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
 	r.GET("/health", handler.Health)
 
-	serverRepo := repository.NewMemoryServerRepository()
+	serverRepo := repository.NewPostgresServerRepository(pool)
 	serverService := service.NewServerService(serverRepo)
-	registerHandler := handler.NewRegisterHandler(serverService)
-	queryHandler := handler.NewServerQueryHandler(serverService)
-	r.POST("/api/servers", registerHandler.RegisterServer)
+	toolRepo := repository.NewPostgresToolRepository(pool)
+	toolService := service.NewToolService(toolRepo, serverRepo)
 
-	r.GET("/api/servers", queryHandler.ListServers)
-	r.GET("/api/servers/:id", queryHandler.GetServer)
+	serverRegisterHandler := handler.NewRegisterHandler(serverService)
+	serverQueryHandler := handler.NewServerQueryHandler(serverService)
+	serverStatusHandler := handler.NewServerStatusHandler(serverService)
 
-	// 健康检查（成员 C）：暂用内存 repo + HTTP client；持久化等成员 A 的 UpdateHealthStatus
+	// 健康检查（成员 C）：探测 + 后台定时检查；持久化走 ServerRepository.UpdateHealth。
 	healthClient := client.NewHealthClient(5 * time.Second)
 	healthCheckService := service.NewHealthCheckService(serverRepo, healthClient)
 	healthCheckHandler := handler.NewHealthCheckHandler(healthCheckService)
-	r.POST("/api/servers/:id/health-check", healthCheckHandler.HealthCheck)
+
+	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
+	toolQueryHandler := handler.NewToolQueryHandler(toolService)
+	toolPublishHandler := handler.NewToolPublishHandler(toolService)
+
+	api := r.Group("/api")
+	servers := api.Group("/servers")
+	servers.POST("", serverRegisterHandler.RegisterServer)
+	servers.GET("", serverQueryHandler.ListServers)
+	servers.GET("/:serversId", serverQueryHandler.GetServer)
+	servers.POST("/::serversId/activate", serverStatusHandler.ActivateServer)
+	servers.POST("/::serversId/offline", serverStatusHandler.OfflineServer)
+	servers.POST("/:id/health-check", healthCheckHandler.HealthCheck)
+
+	tools := api.Group("/tools")
+	tools.POST("", toolRegisterHandler.RegisterTool)
+	tools.GET("", toolQueryHandler.ListTools)
+	tools.GET("/:toolId", toolQueryHandler.GetTool)
+	tools.POST("/:toolId/publish", toolPublishHandler.PublishTool)
+	tools.POST("/:toolId/offline", toolPublishHandler.OfflineTool)
 
 	return r, healthCheckService
 }

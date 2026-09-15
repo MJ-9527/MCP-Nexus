@@ -117,9 +117,9 @@ func (s *HealthCheckService) check(ctx context.Context, server *model.MCPServer)
 		CheckedAt:    checkedAt,
 	}
 
-	// TODO(成员A)：等 ServerRepository 提供 UpdateHealthStatus 方法后，把
-	// health_status 与 last_health_check_at 持久化到 PostgreSQL：
-	//   _ = s.servers.UpdateHealthStatus(ctx, server.ID, result.HealthStatus, checkedAt)
+	// 持久化 health_status 与 last_health_check_at；latency_ms 随响应返回。
+	// 落库失败不影响探测结果（健康探测优先于持久化）。
+	_ = s.servers.UpdateHealth(ctx, server.ID, result.HealthStatus, checkedAt)
 
 	return result
 }
