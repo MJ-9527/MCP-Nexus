@@ -23,11 +23,11 @@ func NewAuditLogService(logs repository.AuditLogRepository) *AuditLogService {
 }
 
 func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRequest) (*model.AuditLog, error) {
-	if s == nil || s.logs == nil || strings.TrimSpace(req.RequestID) == "" || strings.TrimSpace(req.Status) == "" || req.DurationMS < 0 {
+	if s == nil || s.logs == nil || strings.TrimSpace(req.RequestID) == "" || strings.TrimSpace(req.Status) == "" || req.DurationMS < 0 || req.HTTPStatus < 0 || req.CostEstimate < 0 {
 		return nil, ErrInvalidAuditLog
 	}
 	status := strings.TrimSpace(req.Status)
-	digest := ""
+	digest, summary := "", ""
 	if req.Parameters != nil {
 		data, err := json.Marshal(req.Parameters)
 		if err != nil {
@@ -35,8 +35,9 @@ func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRe
 		}
 		hash := sha256.Sum256(data)
 		digest = hex.EncodeToString(hash[:])
+		summary = "sha256:" + digest
 	}
-	log := &model.AuditLog{RequestID: strings.TrimSpace(req.RequestID), UserID: req.UserID, ToolID: req.ToolID, DurationMS: req.DurationMS, Status: status, DeniedReason: strings.TrimSpace(req.DeniedReason), ParamsDigest: digest}
+	log := &model.AuditLog{RequestID: strings.TrimSpace(req.RequestID), UserID: req.UserID, ToolID: req.ToolID, ServerID: req.ServerID, ToolName: strings.TrimSpace(req.ToolName), CallerRole: strings.TrimSpace(req.CallerRole), DurationMS: req.DurationMS, Status: status, HTTPStatus: req.HTTPStatus, DeniedReason: strings.TrimSpace(req.DeniedReason), RejectReason: strings.TrimSpace(req.RejectReason), ParamsSummary: summary, ParamsSensitiveMasked: req.Parameters != nil, ParamsDigest: digest, CostEstimate: req.CostEstimate}
 	if err := s.logs.Create(ctx, log); err != nil {
 		return nil, err
 	}
@@ -44,7 +45,7 @@ func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRe
 }
 
 func (s *AuditLogService) List(ctx context.Context, filter repository.AuditLogFilter) ([]*model.AuditLog, int64, error) {
-	if s == nil || s.logs == nil || filter.Limit < 0 || filter.Offset < 0 {
+	if s == nil || s.logs == nil || filter.Page < 0 || filter.PageSize < 0 {
 		return nil, 0, ErrInvalidAuditLog
 	}
 	return s.logs.List(ctx, filter)

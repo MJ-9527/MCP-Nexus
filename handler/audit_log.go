@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"MCP-Nexus/model"
 	"MCP-Nexus/repository"
@@ -53,17 +54,40 @@ func (h *AuditLogHandler) List(c *gin.Context) {
 			return
 		}
 	}
-	if value, ok := c.GetQuery("limit"); ok {
-		filter.Limit, err = strconv.Atoi(value)
-		if err != nil || filter.Limit < 0 || filter.Limit > 100 {
-			respondError(c, http.StatusBadRequest, "limit 无效")
+	if value, ok := c.GetQuery("server_id"); ok {
+		filter.ServerID, err = parsePositive(value)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, "Server ID 无效")
 			return
 		}
 	}
-	if value, ok := c.GetQuery("offset"); ok {
-		filter.Offset, err = strconv.Atoi(value)
-		if err != nil || filter.Offset < 0 {
-			respondError(c, http.StatusBadRequest, "offset 无效")
+	if value, ok := c.GetQuery("start_time"); ok {
+		parsed, parseErr := time.Parse(time.RFC3339, value)
+		if parseErr != nil {
+			respondError(c, http.StatusBadRequest, "start_time 无效")
+			return
+		}
+		filter.StartTime = &parsed
+	}
+	if value, ok := c.GetQuery("end_time"); ok {
+		parsed, parseErr := time.Parse(time.RFC3339, value)
+		if parseErr != nil {
+			respondError(c, http.StatusBadRequest, "end_time 无效")
+			return
+		}
+		filter.EndTime = &parsed
+	}
+	if value, ok := c.GetQuery("page"); ok {
+		filter.Page, err = strconv.Atoi(value)
+		if err != nil || filter.Page <= 0 {
+			respondError(c, http.StatusBadRequest, "page 无效")
+			return
+		}
+	}
+	if value, ok := c.GetQuery("page_size"); ok {
+		filter.PageSize, err = strconv.Atoi(value)
+		if err != nil || filter.PageSize <= 0 || filter.PageSize > 100 {
+			respondError(c, http.StatusBadRequest, "page_size 无效")
 			return
 		}
 	}
@@ -76,7 +100,14 @@ func (h *AuditLogHandler) List(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, "审计日志查询失败")
 		return
 	}
-	respondSuccess(c, gin.H{"items": logs, "total": total, "limit": filter.Limit, "offset": filter.Offset})
+	page, pageSize := filter.Page, filter.PageSize
+	if page == 0 {
+		page = 1
+	}
+	if pageSize == 0 {
+		pageSize = 20
+	}
+	respondSuccess(c, gin.H{"items": logs, "total": total, "page": page, "page_size": pageSize})
 }
 
 func parsePositive(value string) (*int64, error) {

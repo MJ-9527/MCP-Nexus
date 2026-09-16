@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"MCP-Nexus/model"
 )
@@ -10,9 +11,12 @@ type AuditLogFilter struct {
 	RequestID string
 	UserID    *int64
 	ToolID    *int64
+	ServerID  *int64
 	Status    string
-	Limit     int
-	Offset    int
+	StartTime *time.Time
+	EndTime   *time.Time
+	Page      int
+	PageSize  int
 }
 
 type AuditLogRepository interface {

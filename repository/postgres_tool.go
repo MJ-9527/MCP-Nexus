@@ -14,7 +14,7 @@ import (
 )
 
 const toolColumns = `id, server_id, name, description, category, tags, input_schema,
-	version, published, health_status, call_count, created_at, updated_at`
+	version, published, is_sensitive, sensitive_level, health_status, call_count, created_at, updated_at`
 
 type PostgresToolRepository struct{ pool *pgxpool.Pool }
 
@@ -95,6 +95,17 @@ func (r *PostgresToolRepository) UpdatePublished(ctx context.Context, id int64, 
 	return nil
 }
 
+func (r *PostgresToolRepository) UpdateSensitivity(ctx context.Context, id int64, sensitive bool, level *string) error {
+	result, err := r.pool.Exec(ctx, `UPDATE mcp_tools SET is_sensitive=$1, sensitive_level=$2, updated_at=NOW() WHERE id=$3`, sensitive, level, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *PostgresToolRepository) findOne(ctx context.Context, query string, args ...any) (*model.MCPTool, error) {
 	return scanTool(r.pool.QueryRow(ctx, query, args...))
 }
@@ -103,7 +114,7 @@ type toolRowScanner interface{ Scan(...any) error }
 
 func scanTool(row toolRowScanner) (*model.MCPTool, error) {
 	tool := new(model.MCPTool)
-	err := row.Scan(&tool.ID, &tool.ServerID, &tool.Name, &tool.Description, &tool.Category, &tool.Tags, &tool.InputSchema, &tool.Version, &tool.Published, &tool.HealthStatus, &tool.CallCount, &tool.CreatedAt, &tool.UpdatedAt)
+	err := row.Scan(&tool.ID, &tool.ServerID, &tool.Name, &tool.Description, &tool.Category, &tool.Tags, &tool.InputSchema, &tool.Version, &tool.Published, &tool.IsSensitive, &tool.SensitiveLevel, &tool.HealthStatus, &tool.CallCount, &tool.CreatedAt, &tool.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

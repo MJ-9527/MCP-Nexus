@@ -65,6 +65,9 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	auditLogs := api.Group("/audit-logs")
 	auditLogs.POST("", auditHandler.Create)
 	auditLogs.GET("", auditHandler.List)
+	audit := api.Group("/audit/logs")
+	audit.POST("", auditHandler.Create)
+	audit.GET("", auditHandler.List)
 
 	return r
 }

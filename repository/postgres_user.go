@@ -76,6 +76,15 @@ func (r *PostgresUserRepository) FindRoleByID(ctx context.Context, id int64) (*m
 	return role, err
 }
 
+func (r *PostgresUserRepository) FindRoleByName(ctx context.Context, name string) (*model.Role, error) {
+	role := new(model.Role)
+	err := r.pool.QueryRow(ctx, `SELECT id, name, description, created_at FROM roles WHERE name = $1`, name).Scan(&role.ID, &role.Name, &role.Description, &role.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return role, err
+}
+
 func (r *PostgresUserRepository) AssignRole(ctx context.Context, userID, roleID int64) error {
 	const query = `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`
 	_, err := r.pool.Exec(ctx, query, userID, roleID)
