@@ -93,6 +93,60 @@ func (r *PostgresToolPermissionRepository) HasPermission(ctx context.Context, us
 	return allowed, nil
 }
 
+func (r *PostgresToolPermissionRepository) ListToolNamesByRole(ctx context.Context, roleName string, action string) ([]string, error) {
+	if roleName == "" || action == "" {
+		return nil, errors.New("invalid permission query")
+	}
+	const query = `SELECT DISTINCT t.name
+		FROM tool_permissions p
+		JOIN roles r ON r.id = p.role_id
+		JOIN mcp_tools t ON t.id = p.tool_id
+		WHERE r.name = $1 AND p.action = $2 AND t.published = true
+		ORDER BY t.name`
+	rows, err := r.pool.Query(ctx, query, roleName, action)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
+func (r *PostgresToolPermissionRepository) ListToolNamesByUser(ctx context.Context, userID int64, action string) ([]string, error) {
+	if userID <= 0 || action == "" {
+		return nil, errors.New("invalid permission query")
+	}
+	const query = `SELECT DISTINCT t.name
+		FROM tool_permissions p
+		JOIN mcp_tools t ON t.id = p.tool_id
+		WHERE p.user_id = $1 AND p.action = $2 AND t.published = true
+		ORDER BY t.name`
+	rows, err := r.pool.Query(ctx, query, userID, action)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 func mapPermissionError(err error) error {
 	if err == nil {
 		return nil

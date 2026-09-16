@@ -3,3 +3,5 @@
 *.exe
 *.test
 coverage.out
+web/node_modules/
+web/dist/
