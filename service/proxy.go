@@ -15,11 +15,6 @@ import (
 // CallTimeout 单次工具调用的整体超时（网关侧保护，防止上游故障长期占用资源）。
 const CallTimeout = 10 * time.Second
 
-// PermissionClient 对接权限服务，用于查询角色允许调用的工具列表。
-type PermissionClient interface {
-	GetAllowedToolNamesByRole(ctx context.Context, role string) ([]string, error)
-}
-
 type ProxyService struct {
 	serverRepo    repository.ServerRepository
 	toolRepo      repository.ToolRepository
@@ -38,15 +33,18 @@ func NewProxyService(serverRepo repository.ServerRepository,
 	}
 }
 
-// ListTools 工具发现：仅返回【Server 在线 + 工具已发布 + 角色有权限】的工具（B1/B3）。
-func (s *ProxyService) ListTools(ctx context.Context, role string) (*model.McpListToolsResponse, error) {
-	allowedToolNames, err := s.permissionCli.GetAllowedToolNamesByRole(ctx, role)
-	if err != nil {
-		return nil, fmt.Errorf("query permission error: %w", err)
-	}
-	allowed := make(map[string]bool, len(allowedToolNames))
-	for _, name := range allowedToolNames {
-		allowed[name] = true
+// ListTools 工具发现：仅返回【Server 在线 + 工具已发布 + 有 view/call 权限】的工具（B1/B3/B6）。
+// 权限取 view 与 call 两个 action 的并集：可调用者必然可见，单独授予 view 的账号也可见。
+func (s *ProxyService) ListTools(ctx context.Context, role string, userID int64) (*model.McpListToolsResponse, error) {
+	allowed := make(map[string]bool)
+	for _, action := range []string{PermissionActionView, PermissionActionCall} {
+		allowedToolNames, err := s.permissionCli.GetAllowedToolNames(ctx, role, userID, action)
+		if err != nil {
+			return nil, fmt.Errorf("query permission error: %w", err)
+		}
+		for _, name := range allowedToolNames {
+			allowed[name] = true
+		}
 	}
 
 	// 仅已发布工具（下线工具不出现在发现列表）
@@ -80,10 +78,10 @@ func (s *ProxyService) ListTools(ctx context.Context, role string) (*model.McpLi
 	return &model.McpListToolsResponse{Tools: viewList}, nil
 }
 
-// CallTool 调用前检查（B3）→ 转发下游（B2）→ 统一业务错误（B4）。
-func (s *ProxyService) CallTool(ctx context.Context, role string, req *model.McpToolCallRequest, requestID string) (*model.McpToolCallResponse, error) {
-	// 1. RBAC：角色是否有权调用该工具
-	allowedToolNames, err := s.permissionCli.GetAllowedToolNamesByRole(ctx, role)
+// CallTool 调用前检查（B3/B6）→ 转发下游（B2）→ 统一业务错误（B4）。
+func (s *ProxyService) CallTool(ctx context.Context, role string, userID int64, req *model.McpToolCallRequest, requestID string) (*model.McpToolCallResponse, error) {
+	// 1. RBAC：角色授权或用户直授是否有权调用该工具（action=call）
+	allowedToolNames, err := s.permissionCli.GetAllowedToolNames(ctx, role, userID, PermissionActionCall)
 	if err != nil {
 		return nil, fmt.Errorf("query permission error: %w", err)
 	}
@@ -95,7 +93,8 @@ func (s *ProxyService) CallTool(ctx context.Context, role string, req *model.Mcp
 		}
 	}
 	if !hasPermission {
-		return nil, ErrPermissionDenied
+		// 保留拒绝原因（B6）：账号身份与所需操作
+		return nil, fmt.Errorf("%w: user %d (role %q) is not authorized to call tool %q", ErrPermissionDenied, userID, role, req.ToolName)
 	}
 
 	// 2. 工具存在且已发布

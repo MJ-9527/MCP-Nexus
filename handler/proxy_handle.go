@@ -22,11 +22,11 @@ func NewProxyHandler(proxySvc *service.ProxyService) *ProxyHandler {
 	return &ProxyHandler{proxyService: proxySvc}
 }
 
-// ListTools GET /mcp/tools 返回当前角色可调用的工具列表。
-// 角色来源：JWT 中间件注入的 gin context（key=agent_role）；未接入 JWT 前由 X-Role 头提供（第 2 周 B5 接管）。
+// ListTools GET /mcp/tools 返回当前调用者可查看/调用的工具列表。
+// 身份来源：JWT 中间件（B5）注入的 user_id 与 agent_role（B6 RBAC 据此鉴权）。
 func (h *ProxyHandler) ListTools(c *gin.Context) {
-	role := currentRole(c)
-	resp, err := h.proxyService.ListTools(c.Request.Context(), role)
+	role, userID := currentPrincipal(c)
+	resp, err := h.proxyService.ListTools(c.Request.Context(), role, userID)
 	if err != nil {
 		respondProxyError(c, err)
 		return
@@ -51,9 +51,9 @@ func (h *ProxyHandler) CallTool(c *gin.Context) {
 		req.Method = "tools/call"
 	}
 
-	role := currentRole(c)
+	role, userID := currentPrincipal(c)
 	requestID := getRequestID(c)
-	resp, err := h.proxyService.CallTool(c.Request.Context(), role, &req, requestID)
+	resp, err := h.proxyService.CallTool(c.Request.Context(), role, userID, &req, requestID)
 	if err != nil {
 		respondProxyError(c, err)
 		return
@@ -61,21 +61,22 @@ func (h *ProxyHandler) CallTool(c *gin.Context) {
 	respondSuccess(c, resp)
 }
 
-// currentRole 读取当前调用者角色。已通过 JWT 认证（user_id 存在）的请求只信任
-// 令牌注入的角色，防止借 X-Role 头提权；未认证请求回退 X-Role / anonymous。
-func currentRole(c *gin.Context) string {
-	if _, authed := c.Get("user_id"); authed {
+// currentPrincipal 读取当前调用者身份（角色 + 用户 ID）。已通过 JWT 认证（user_id 存在）的
+// 请求只信任令牌注入的角色，防止借 X-Role 头提权；未认证请求回退 X-Role / anonymous。
+func currentPrincipal(c *gin.Context) (string, int64) {
+	userID := c.GetInt64("user_id")
+	if userID > 0 {
 		if s, ok := c.Get("agent_role"); ok {
 			if role, isStr := s.(string); isStr && role != "" {
-				return role
+				return role, userID
 			}
 		}
-		return "anonymous"
+		return "anonymous", userID
 	}
 	if r := c.GetHeader("X-Role"); r != "" {
-		return r
+		return r, 0
 	}
-	return "anonymous"
+	return "anonymous", 0
 }
 
 // respondProxyError 将 service 层错误统一映射为业务错误码与 HTTP 状态码（B4）。

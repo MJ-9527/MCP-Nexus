@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,22 +15,35 @@ import (
 	"MCP-Nexus/repository"
 )
 
-// stubPermissionClient 固定角色→工具授权映射，隔离权限存储。
+// stubPermissionClient 固定角色/用户 → 工具授权映射，隔离权限存储。
 type stubPermissionClient struct {
-	allowed map[string][]string
+	roleAllowed map[string][]string
+	userAllowed map[int64][]string
 }
 
-func (s *stubPermissionClient) GetAllowedToolNamesByRole(_ context.Context, role string) ([]string, error) {
-	return s.allowed[role], nil
+func (s *stubPermissionClient) GetAllowedToolNames(_ context.Context, role string, userID int64, action string) ([]string, error) {
+	// 简化：call 与 view 共用同一授权集合；其余 action（publish/manage）不走工具级鉴权
+	if action != PermissionActionCall && action != PermissionActionView {
+		return nil, nil
+	}
+	seen := make(map[string]bool)
+	names := make([]string, 0)
+	for _, name := range append(append([]string{}, s.roleAllowed[role]...), s.userAllowed[userID]...) {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 func newFixture(t *testing.T) (*ProxyService, *repository.MemoryToolRepository, *repository.MemoryServerRepository) {
 	t.Helper()
 	serverRepo := repository.NewMemoryServerRepository()
 	toolRepo := repository.NewMemoryToolRepository()
-	permCli := &stubPermissionClient{allowed: map[string][]string{
+	permCli := &stubPermissionClient{roleAllowed: map[string][]string{
 		"agent": {"query_sales", "ghost"},
-	}}
+	}, userAllowed: map[int64][]string{}}
 	svc := &ProxyService{
 		serverRepo:    serverRepo,
 		toolRepo:      toolRepo,
@@ -71,7 +86,7 @@ func TestListToolsFiltersOfflineServerAndUnpublishedTool(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := svc.ListTools(context.Background(), "agent")
+	resp, err := svc.ListTools(context.Background(), "agent", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +107,7 @@ func TestCallToolSuccessPassthrough(t *testing.T) {
 	defer downstream.Close()
 	seedOnline(t, serverRepo, toolRepo, downstream.URL)
 
-	resp, err := svc.CallTool(context.Background(), "agent", &model.McpToolCallRequest{
+	resp, err := svc.CallTool(context.Background(), "agent", 0, &model.McpToolCallRequest{
 		Method: "tools/call", ToolName: "query_sales", Arguments: map[string]interface{}{"month": "2026-08"},
 	}, "req-1")
 	if err != nil {
@@ -126,7 +141,7 @@ func TestCallToolErrors(t *testing.T) {
 			svc, toolRepo, serverRepo := newFixture(t)
 			seedOnline(t, serverRepo, toolRepo, "http://unused")
 			tc.seed(t, toolRepo, serverRepo)
-			_, err := svc.CallTool(context.Background(), tc.role, &model.McpToolCallRequest{ToolName: "ghost"}, "req-1")
+			_, err := svc.CallTool(context.Background(), tc.role, 0, &model.McpToolCallRequest{ToolName: "ghost"}, "req-1")
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("期望 %v，实际 %v", tc.wantErr, err)
 			}
@@ -144,7 +159,7 @@ func TestCallToolUnknownHealthPasses(t *testing.T) {
 	// 注册默认 unknown：未检测不应拦截调用（ghost 已在授权名单中）
 	_ = toolRepo.Create(context.Background(), &model.MCPTool{ID: 2, ServerID: 1, Name: "ghost", Published: true, HealthStatus: "unknown"})
 
-	resp, err := svc.CallTool(context.Background(), "agent", &model.McpToolCallRequest{ToolName: "ghost"}, "req-1")
+	resp, err := svc.CallTool(context.Background(), "agent", 0, &model.McpToolCallRequest{ToolName: "ghost"}, "req-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +173,7 @@ func TestCallToolServerOffline(t *testing.T) {
 	seedOnline(t, serverRepo, toolRepo, "http://unused")
 	_ = serverRepo.UpdateHealth(context.Background(), 1, "offline", time.Now())
 
-	_, err := svc.CallTool(context.Background(), "agent", &model.McpToolCallRequest{ToolName: "query_sales"}, "req-1")
+	_, err := svc.CallTool(context.Background(), "agent", 0, &model.McpToolCallRequest{ToolName: "query_sales"}, "req-1")
 	if !errors.Is(err, ErrServerUnavailable) {
 		t.Fatalf("期望 ErrServerUnavailable，实际 %v", err)
 	}
@@ -175,7 +190,7 @@ func TestCallToolUpstreamTimeout(t *testing.T) {
 	defer downstream.Close()
 	seedOnline(t, serverRepo, toolRepo, downstream.URL)
 
-	_, err := svc.CallTool(context.Background(), "agent", &model.McpToolCallRequest{ToolName: "query_sales"}, "req-1")
+	_, err := svc.CallTool(context.Background(), "agent", 0, &model.McpToolCallRequest{ToolName: "query_sales"}, "req-1")
 	if !errors.Is(err, ErrUpstreamTimeout) {
 		t.Fatalf("期望 ErrUpstreamTimeout，实际 %v", err)
 	}
@@ -189,8 +204,68 @@ func TestCallToolUpstreamBadStatus(t *testing.T) {
 	defer downstream.Close()
 	seedOnline(t, serverRepo, toolRepo, downstream.URL)
 
-	_, err := svc.CallTool(context.Background(), "agent", &model.McpToolCallRequest{ToolName: "query_sales"}, "req-1")
+	_, err := svc.CallTool(context.Background(), "agent", 0, &model.McpToolCallRequest{ToolName: "query_sales"}, "req-1")
 	if !errors.Is(err, ErrUpstreamError) {
 		t.Fatalf("期望 ErrUpstreamError，实际 %v", err)
+	}
+}
+
+// B6：用户直授（user_id 维度）即使无角色授权也应生效
+func TestCallToolUserDirectGrant(t *testing.T) {
+	svc, toolRepo, serverRepo := newFixture(t)
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer downstream.Close()
+	seedOnline(t, serverRepo, toolRepo, downstream.URL)
+	// user 42 直接授权 query_inventory（不在任何角色名单中）
+	svc.permissionCli.(*stubPermissionClient).userAllowed[42] = []string{"query_inventory"}
+	_ = toolRepo.Create(context.Background(), &model.MCPTool{ID: 3, ServerID: 1, Name: "query_inventory", Published: true, HealthStatus: "online"})
+
+	if _, err := svc.CallTool(context.Background(), "anonymous", 42, &model.McpToolCallRequest{ToolName: "query_inventory"}, "req-1"); err != nil {
+		t.Fatalf("用户直授应放行: %v", err)
+	}
+	// 其他用户无直授仍被拒
+	_, err := svc.CallTool(context.Background(), "anonymous", 43, &model.McpToolCallRequest{ToolName: "query_inventory"}, "req-1")
+	if !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("无直授用户期望 ErrPermissionDenied，实际 %v", err)
+	}
+}
+
+// B6：拒绝原因应包含用户、角色与工具信息
+func TestCallToolDeniedReason(t *testing.T) {
+	svc, toolRepo, serverRepo := newFixture(t)
+	seedOnline(t, serverRepo, toolRepo, "http://unused")
+	_ = toolRepo.Create(context.Background(), &model.MCPTool{ID: 3, ServerID: 1, Name: "query_inventory", Published: true, HealthStatus: "online"})
+
+	_, err := svc.CallTool(context.Background(), "agent", 7, &model.McpToolCallRequest{ToolName: "query_inventory"}, "req-1")
+	if !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("期望 ErrPermissionDenied，实际 %v", err)
+	}
+	for _, want := range []string{"user 7", "agent", "query_inventory"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("拒绝原因缺少 %q: %v", want, err)
+		}
+	}
+}
+
+// B6：工具发现取 view/call 并集，仅授 view 的工具也应可见
+func TestListToolsViewUnionCall(t *testing.T) {
+	svc, toolRepo, serverRepo := newFixture(t)
+	seedOnline(t, serverRepo, toolRepo, "http://unused")
+	_ = toolRepo.Create(context.Background(), &model.MCPTool{ID: 3, ServerID: 1, Name: "readonly_report", Published: true, HealthStatus: "online"})
+	// 简化 stub 中 view 与 call 共用授权集合，这里直接把只读工具加入 agent 名单验证可见性
+	svc.permissionCli.(*stubPermissionClient).roleAllowed["agent"] = []string{"query_sales", "ghost", "readonly_report"}
+
+	resp, err := svc.ListTools(context.Background(), "agent", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(resp.Tools))
+	for _, tool := range resp.Tools {
+		names = append(names, tool.Name)
+	}
+	if !slices.Contains(names, "readonly_report") {
+		t.Fatalf("view/call 并集应包含 readonly_report: %v", names)
 	}
 }
