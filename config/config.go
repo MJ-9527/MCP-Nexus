@@ -12,6 +12,7 @@ type Config struct {
 	Port      string
 	JWTSecret string
 	JWTTTL    time.Duration
+	RedisAddr string
 }
 
 func Load() Config {
@@ -36,5 +37,11 @@ func Load() Config {
 		}
 	}
 
-	return Config{Port: port, JWTSecret: jwtSecret, JWTTTL: jwtTTL}
+	// Redis 限流（B7）
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	return Config{Port: port, JWTSecret: jwtSecret, JWTTTL: jwtTTL, RedisAddr: redisAddr}
 }
