@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"MCP-Nexus/client"
+	"MCP-Nexus/config"
 	"MCP-Nexus/handler"
 	"MCP-Nexus/middleware"
 	"MCP-Nexus/repository"
@@ -13,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
+func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
@@ -40,8 +41,12 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)
 	permissionHandler := handler.NewToolPermissionHandler(permissionService)
 	auditHandler := handler.NewAuditLogHandler(auditService)
+	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTTTL)
+	authHandler := handler.NewAuthHandler(authService)
 
 	api := r.Group("/api")
+	api.POST("/auth/login", authHandler.Login)
+
 	servers := api.Group("/servers")
 	servers.POST("", serverRegisterHandler.RegisterServer)
 	servers.GET("", serverQueryHandler.ListServers)
@@ -68,10 +73,12 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	auditLogs.GET("", auditHandler.List)
 
 	// MCP 网关代理（B1）：工具发现 + 调用转发，经统一调用链（权限过滤 → 状态检查 → 转发）
+	// B5：/mcp 强制 JWT 认证，角色与用户 ID 由令牌注入，不再信任 X-Role
 	permissionClient := service.NewRolePermissionClient(permissionRepo)
 	proxySvc := service.NewProxyService(serverRepo, toolRepo, permissionClient)
 	proxyHandler := handler.NewProxyHandler(proxySvc)
 	mcp := r.Group("/mcp")
+	mcp.Use(middleware.JWTAuth(cfg.JWTSecret))
 	{
 		mcp.GET("/tools", proxyHandler.ListTools)
 		mcp.POST("/tools/:toolName/call", proxyHandler.CallTool)

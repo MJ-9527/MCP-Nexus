@@ -61,13 +61,16 @@ func (h *ProxyHandler) CallTool(c *gin.Context) {
 	respondSuccess(c, resp)
 }
 
-// currentRole 读取当前调用者角色。JWT 中间件（B5）注入 agent_role 后优先使用；
-// 未认证请求回退 X-Role 头，便于第 1 周联调，生产环境将由 JWT 中间件接管。
+// currentRole 读取当前调用者角色。已通过 JWT 认证（user_id 存在）的请求只信任
+// 令牌注入的角色，防止借 X-Role 头提权；未认证请求回退 X-Role / anonymous。
 func currentRole(c *gin.Context) string {
-	if v, ok := c.Get("agent_role"); ok {
-		if s, ok := v.(string); ok && s != "" {
-			return s
+	if _, authed := c.Get("user_id"); authed {
+		if s, ok := c.Get("agent_role"); ok {
+			if role, isStr := s.(string); isStr && role != "" {
+				return role
+			}
 		}
+		return "anonymous"
 	}
 	if r := c.GetHeader("X-Role"); r != "" {
 		return r
