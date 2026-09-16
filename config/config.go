@@ -3,16 +3,18 @@ package config
 import (
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Port      string
-	JWTSecret string
-	JWTTTL    time.Duration
-	RedisAddr string
+	Port          string
+	JWTSecret     string
+	JWTTTL        time.Duration
+	RedisAddr     string
+	PublicBaseURL string // 网关对外可达地址（B9 接入配置生成用），空则用请求 Host 推导
 }
 
 func Load() Config {
@@ -43,5 +45,8 @@ func Load() Config {
 		redisAddr = "localhost:6379"
 	}
 
-	return Config{Port: port, JWTSecret: jwtSecret, JWTTTL: jwtTTL, RedisAddr: redisAddr}
+	// 对外可达地址（B9）：供接入配置生成，部署在反代/容器后建议显式设置
+	publicBaseURL := strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
+
+	return Config{Port: port, JWTSecret: jwtSecret, JWTTTL: jwtTTL, RedisAddr: redisAddr, PublicBaseURL: publicBaseURL}
 }

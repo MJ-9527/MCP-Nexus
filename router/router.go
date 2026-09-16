@@ -98,5 +98,10 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 		mcp.POST("/tools/:toolName/call", proxyHandler.CallTool)
 	}
 
+	// B9：MCP 接入配置生成（登录账号获取自己的接入指引与可用工具清单）
+	mcpConfigService := service.NewMcpConfigService(proxySvc, cfg.JWTTTL.String())
+	mcpConfigHandler := handler.NewMcpConfigHandler(mcpConfigService, cfg.PublicBaseURL)
+	protected.GET("/mcp-config", mcpConfigHandler.GetMcpConfig)
+
 	return r
 }
