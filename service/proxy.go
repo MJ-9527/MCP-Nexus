@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"MCP-Nexus/client"
@@ -20,6 +21,7 @@ type ProxyService struct {
 	toolRepo      repository.ToolRepository
 	permissionCli PermissionClient
 	mcpClient     *client.MCPClient
+	audit         *AuditLogService // B8 审计埋点：可 nil（无审计依赖时调用链照常工作）
 }
 
 func NewProxyService(serverRepo repository.ServerRepository,
@@ -32,6 +34,9 @@ func NewProxyService(serverRepo repository.ServerRepository,
 		mcpClient:     client.NewMCPClient(CallTimeout, client.DefaultMaxBodyBytes),
 	}
 }
+
+// SetAudit 注入审计服务（B8）。必须在首次调用前设置。
+func (s *ProxyService) SetAudit(audit *AuditLogService) { s.audit = audit }
 
 // ListTools 工具发现：仅返回【Server 在线 + 工具已发布 + 有 view/call 权限】的工具（B1/B3/B6）。
 // 权限取 view 与 call 两个 action 的并集：可调用者必然可见，单独授予 view 的账号也可见。
@@ -78,8 +83,60 @@ func (s *ProxyService) ListTools(ctx context.Context, role string, userID int64)
 	return &model.McpListToolsResponse{Tools: viewList}, nil
 }
 
-// CallTool 调用前检查（B3/B6）→ 转发下游（B2）→ 统一业务错误（B4）。
+// 审计状态分类（B8）：成功放行 / 权限拒绝 / 其他失败。
+const (
+	AuditStatusSuccess = "success"
+	AuditStatusDenied  = "denied"
+	AuditStatusFailed  = "failed"
+)
+
+// CallTool 调用前检查（B3/B6）→ 转发下游（B2）→ 统一业务错误（B4）→ 审计埋点（B8）。
 func (s *ProxyService) CallTool(ctx context.Context, role string, userID int64, req *model.McpToolCallRequest, requestID string) (*model.McpToolCallResponse, error) {
+	startedAt := time.Now()
+	var toolID int64
+	resp, err := s.callTool(ctx, role, userID, req, requestID, &toolID)
+	s.recordCallAudit(requestID, userID, toolID, startedAt, err, req)
+	return resp, err
+}
+
+// recordCallAudit 异步落审计：不阻塞调用链；审计失败仅记日志不影响调用结果（B8）。
+func (s *ProxyService) recordCallAudit(requestID string, userID int64, toolID int64, startedAt time.Time, err error, req *model.McpToolCallRequest) {
+	if s.audit == nil || requestID == "" {
+		return
+	}
+	status, reason := AuditStatusSuccess, ""
+	if err != nil {
+		if errors.Is(err, ErrPermissionDenied) {
+			status, reason = AuditStatusDenied, err.Error()
+		} else {
+			status, reason = AuditStatusFailed, err.Error()
+		}
+	}
+	id := userID
+	var toolPtr *int64
+	if toolID > 0 {
+		toolPtr = &toolID
+	}
+	entry := model.CreateAuditLogRequest{
+		RequestID:    requestID,
+		UserID:       &id,
+		ToolID:       toolPtr,
+		DurationMS:   time.Since(startedAt).Milliseconds(),
+		Status:       status,
+		DeniedReason: reason,
+		Parameters:   req.Arguments, // Record 内部统一脱敏后摘要，原文不落库
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if _, auditErr := s.audit.Record(ctx, entry); auditErr != nil {
+			log.Printf("[audit] 落审计失败 request_id=%s status=%s err=%v", requestID, status, auditErr)
+		}
+	}()
+}
+
+// callTool 核心调用链，toolID 用于审计记录。
+func (s *ProxyService) callTool(ctx context.Context, role string, userID int64, req *model.McpToolCallRequest, requestID string, toolID *int64) (*model.McpToolCallResponse, error) {
 	// 1. RBAC：角色授权或用户直授是否有权调用该工具（action=call）
 	allowedToolNames, err := s.permissionCli.GetAllowedToolNames(ctx, role, userID, PermissionActionCall)
 	if err != nil {
@@ -104,6 +161,7 @@ func (s *ProxyService) CallTool(ctx context.Context, role string, userID int64, 
 	} else if err != nil {
 		return nil, fmt.Errorf("find tool error: %w", err)
 	}
+	*toolID = tool.ID
 
 	// 3. 工具未被明确下线（unknown=未检测可放行；只有明确 offline 才拒绝）
 	if tool.HealthStatus == "offline" {

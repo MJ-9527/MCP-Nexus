@@ -86,6 +86,7 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	// B7：JWT 之后挂 Redis 令牌桶限流（角色限额 admin 600/dev 300/agent 120 每分钟），Redis 不可用降级放行
 	permissionClient := service.NewRolePermissionClient(permissionRepo)
 	proxySvc := service.NewProxyService(serverRepo, toolRepo, permissionClient)
+	proxySvc.SetAudit(auditService) // B8：调用链审计埋点
 	proxyHandler := handler.NewProxyHandler(proxySvc)
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	limiter := middleware.NewRateLimiter(rdb, middleware.DefaultRoleLimits())
