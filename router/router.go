@@ -19,6 +19,7 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 
 	r.GET("/health", handler.Health)
 
+	// Repository → Service → Handler 装配（网关不绕过 Repository，不直接操作数据库）
 	serverRepo := repository.NewPostgresServerRepository(pool)
 	serverService := service.NewServerService(serverRepo)
 	serverHealthService := service.NewServerHealthService(serverRepo, client.NewHealthClient(5*time.Second))
@@ -49,19 +50,6 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	servers.POST("/:id/offline", serverStatusHandler.OfflineServer)
 	servers.POST("/:id/health-check", serverHealthHandler.CheckServer)
 
-	r.GET("/api/servers", queryHandler.ListServers)
-	r.GET("/api/servers/:id", queryHandler.GetServer)
-
-	//MCP网关代理
-	toolRepo := repository.NewMemoryToolRepository()
-	proxySvc := service.NewProxyService(serverRepo, toolRepo)
-	proxyHandler := handler.NewProxyHandler(proxySvc)
-
-	gatewayGroup := r.Group("/gateway")
-	{
-		gatewayGroup.POST("/tools/list", proxyHandler.ListTools)
-		gatewayGroup.POST("/tools/call", proxyHandler.CallTool)
-	}
 	tools := api.Group("/tools")
 	tools.POST("", toolRegisterHandler.RegisterTool)
 	tools.GET("", toolQueryHandler.ListTools)
@@ -78,6 +66,16 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	auditLogs := api.Group("/audit-logs")
 	auditLogs.POST("", auditHandler.Create)
 	auditLogs.GET("", auditHandler.List)
+
+	// MCP 网关代理（B1）：工具发现 + 调用转发，经统一调用链（权限过滤 → 状态检查 → 转发）
+	permissionClient := service.NewRolePermissionClient(permissionRepo)
+	proxySvc := service.NewProxyService(serverRepo, toolRepo, permissionClient)
+	proxyHandler := handler.NewProxyHandler(proxySvc)
+	mcp := r.Group("/mcp")
+	{
+		mcp.GET("/tools", proxyHandler.ListTools)
+		mcp.POST("/tools/:toolName/call", proxyHandler.CallTool)
+	}
 
 	return r
 }

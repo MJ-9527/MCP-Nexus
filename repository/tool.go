@@ -17,6 +17,8 @@ type ToolRepository interface {
 	Create(ctx context.Context, tool *model.MCPTool) error
 	FindByID(ctx context.Context, id int64) (*model.MCPTool, error)
 	FindByName(ctx context.Context, serverID int64, name string) (*model.MCPTool, error)
+	// FindPublishedByName 跨 Server 按名称精确查找第一个已发布工具，供网关调用使用。
+	FindPublishedByName(ctx context.Context, name string) (*model.MCPTool, error)
 	List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, error)
 	UpdatePublished(ctx context.Context, id int64, published bool) error
 }

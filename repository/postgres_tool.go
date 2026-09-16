@@ -25,7 +25,12 @@ func NewPostgresToolRepository(pool *pgxpool.Pool) *PostgresToolRepository {
 func (r *PostgresToolRepository) Create(ctx context.Context, tool *model.MCPTool) error {
 	const query = `INSERT INTO mcp_tools (server_id, name, description, category, tags, input_schema, version, published, health_status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, call_count, created_at, updated_at`
-	err := r.pool.QueryRow(ctx, query, tool.ServerID, tool.Name, tool.Description, tool.Category, tool.Tags, tool.InputSchema, tool.Version, tool.Published, tool.HealthStatus).Scan(&tool.ID, &tool.CallCount, &tool.CreatedAt, &tool.UpdatedAt)
+	// tags 列 NOT NULL：nil 切片显式传 NULL 会违反约束（DEFAULT 仅在省略列时生效），写空数组
+	tags := tool.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	err := r.pool.QueryRow(ctx, query, tool.ServerID, tool.Name, tool.Description, tool.Category, tags, tool.InputSchema, tool.Version, tool.Published, tool.HealthStatus).Scan(&tool.ID, &tool.CallCount, &tool.CreatedAt, &tool.UpdatedAt)
 	return mapToolError(err)
 }
 
@@ -35,6 +40,10 @@ func (r *PostgresToolRepository) FindByID(ctx context.Context, id int64) (*model
 
 func (r *PostgresToolRepository) FindByName(ctx context.Context, serverID int64, name string) (*model.MCPTool, error) {
 	return r.findOne(ctx, `SELECT `+toolColumns+` FROM mcp_tools WHERE server_id = $1 AND name = $2`, serverID, name)
+}
+
+func (r *PostgresToolRepository) FindPublishedByName(ctx context.Context, name string) (*model.MCPTool, error) {
+	return r.findOne(ctx, `SELECT `+toolColumns+` FROM mcp_tools WHERE name = $1 AND published = true ORDER BY id LIMIT 1`, name)
 }
 
 func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, error) {

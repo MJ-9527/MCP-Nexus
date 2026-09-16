@@ -16,8 +16,13 @@ func respondSuccess(c *gin.Context, data any) {
 }
 
 func respondError(c *gin.Context, status int, message string) {
+	respondErrorCode(c, status, httpCode(status), message)
+}
+
+// respondErrorCode 按业务错误码返回统一 JSON 结构（含 request_id），保证所有失败场景格式稳定。
+func respondErrorCode(c *gin.Context, status int, code string, message string) {
 	c.JSON(status, model.APIResponse{
-		Code:      httpCode(status),
+		Code:      code,
 		Message:   message,
 		RequestID: getRequestID(c),
 		Data:      nil,

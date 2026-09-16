@@ -11,4 +11,6 @@ type ToolPermissionRepository interface {
 	Revoke(ctx context.Context, toolID int64, userID, roleID *int64, action string) error
 	ListByTool(ctx context.Context, toolID int64) ([]*model.ToolPermission, error)
 	HasPermission(ctx context.Context, userID, toolID int64, action string) (bool, error)
+	// ListToolNamesByRole 查询某角色在指定操作下被授权的工具名集合（仅统计已发布工具），供网关 RBAC 过滤。
+	ListToolNamesByRole(ctx context.Context, roleName string, action string) ([]string, error)
 }
