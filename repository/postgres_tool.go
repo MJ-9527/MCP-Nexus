@@ -40,7 +40,7 @@ func (r *PostgresToolRepository) FindByName(ctx context.Context, serverID int64,
 	return r.findOne(ctx, `SELECT `+toolColumns+` FROM mcp_tools WHERE server_id = $1 AND name = $2`, serverID, name)
 }
 
-func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, error) {
+func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, int64, error) {
 	query := `SELECT ` + toolColumns + ` FROM mcp_tools`
 	conditions, args := make([]string, 0), make([]any, 0)
 	if filter.ServerID != nil {
@@ -51,9 +51,17 @@ func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([
 		args = append(args, "%"+filter.Name+"%")
 		conditions = append(conditions, "name ILIKE $"+strconv.Itoa(len(args)))
 	}
+	if filter.Keyword != "" {
+		args = append(args, "%"+filter.Keyword+"%")
+		conditions = append(conditions, "(name ILIKE $"+strconv.Itoa(len(args))+" OR description ILIKE $"+strconv.Itoa(len(args))+")")
+	}
 	if filter.Category != "" {
 		args = append(args, filter.Category)
-		conditions = append(conditions, "category = $"+strconv.Itoa(len(args)))
+		conditions = append(conditions, "(category = $"+strconv.Itoa(len(args))+" OR category_id IN (SELECT id FROM tool_categories WHERE slug = $"+strconv.Itoa(len(args))+" OR name = $"+strconv.Itoa(len(args))+"))")
+	}
+	if len(filter.Tags) > 0 {
+		args = append(args, filter.Tags)
+		conditions = append(conditions, "tags @> $"+strconv.Itoa(len(args)))
 	}
 	if filter.Published != nil {
 		args = append(args, *filter.Published)
@@ -66,24 +74,55 @@ func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY id"
+	var total int64
+	countQuery := "SELECT COUNT(*) FROM mcp_tools"
+	if len(conditions) > 0 {
+		countQuery += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	query += " " + toolOrderBy(filter.Sort)
+	if filter.PageSize > 0 {
+		args = append(args, filter.PageSize)
+		query += " LIMIT $" + strconv.Itoa(len(args))
+		if filter.Page > 0 {
+			args = append(args, (filter.Page-1)*filter.PageSize)
+			query += " OFFSET $" + strconv.Itoa(len(args))
+		}
+	}
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	tools := make([]*model.MCPTool, 0)
 	for rows.Next() {
 		tool, err := scanTool(rows)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		tools = append(tools, tool)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return tools, nil
+	return tools, total, nil
+}
+
+func toolOrderBy(sort string) string {
+	switch sort {
+	case "rating":
+		return "ORDER BY average_rating DESC, rating_count DESC, id DESC"
+	case "name":
+		return "ORDER BY name ASC, id ASC"
+	case "newest":
+		return "ORDER BY created_at DESC, id DESC"
+	case "popularity", "":
+		return "ORDER BY call_count DESC, id DESC"
+	default:
+		return "ORDER BY call_count DESC, id DESC"
+	}
 }
 
 func (r *PostgresToolRepository) UpdatePublished(ctx context.Context, id int64, published bool) error {
