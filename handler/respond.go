@@ -34,6 +34,10 @@ func httpCode(status int) string {
 		return "CONFLICT"
 	case 429:
 		return "RATE_LIMITED"
+	case 403:
+		return "FORBIDDEN"
+	case 401:
+		return "UNAUTHORIZED"
 	default:
 		return "INTERNAL_ERROR"
 	}

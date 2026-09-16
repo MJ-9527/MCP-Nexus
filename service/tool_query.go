@@ -8,9 +8,9 @@ import (
 	"MCP-Nexus/repository"
 )
 
-func (s *ToolService) List(ctx context.Context, filter repository.ToolFilter) ([]*model.MCPTool, error) {
+func (s *ToolService) List(ctx context.Context, filter repository.ToolFilter) ([]*model.MCPTool, int64, error) {
 	if s == nil || s.tools == nil {
-		return nil, ErrInvalidTool
+		return nil, 0, ErrInvalidTool
 	}
 	return s.tools.List(ctx, filter)
 }

@@ -49,11 +49,40 @@ func (r *PostgresUserRepository) FindByUsername(ctx context.Context, username st
 	return user, nil
 }
 
+func (r *PostgresUserRepository) FindByID(ctx context.Context, id int64) (*model.User, error) {
+	const query = `SELECT id, username, password_hash, status, created_at, updated_at FROM users WHERE id = $1`
+	user := new(model.User)
+	err := r.pool.QueryRow(ctx, query, id).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return user, err
+}
+
 func (r *PostgresUserRepository) CreateRole(ctx context.Context, role *model.Role) error {
 	const query = `INSERT INTO roles (name, description) VALUES ($1, $2)
 		RETURNING id, created_at`
 	err := r.pool.QueryRow(ctx, query, role.Name, role.Description).Scan(&role.ID, &role.CreatedAt)
 	return mapUserError(err)
+}
+
+func (r *PostgresUserRepository) FindRoleByID(ctx context.Context, id int64) (*model.Role, error) {
+	const query = `SELECT id, name, description, created_at FROM roles WHERE id = $1`
+	role := new(model.Role)
+	err := r.pool.QueryRow(ctx, query, id).Scan(&role.ID, &role.Name, &role.Description, &role.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return role, err
+}
+
+func (r *PostgresUserRepository) FindRoleByName(ctx context.Context, name string) (*model.Role, error) {
+	role := new(model.Role)
+	err := r.pool.QueryRow(ctx, `SELECT id, name, description, created_at FROM roles WHERE name = $1`, name).Scan(&role.ID, &role.Name, &role.Description, &role.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return role, err
 }
 
 func (r *PostgresUserRepository) AssignRole(ctx context.Context, userID, roleID int64) error {
