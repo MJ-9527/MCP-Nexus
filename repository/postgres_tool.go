@@ -13,8 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const toolColumns = `id, server_id, name, description, category, tags, input_schema,
-	version, published, is_sensitive, sensitive_level, health_status, call_count, created_at, updated_at`
+const toolColumns = `id, server_id, category_id, name, description, category, tags, input_schema,
+	version, published, is_sensitive, sensitive_level, health_status, call_count,
+	average_rating, rating_count, created_at, updated_at`
 
 type PostgresToolRepository struct{ pool *pgxpool.Pool }
 
@@ -23,9 +24,11 @@ func NewPostgresToolRepository(pool *pgxpool.Pool) *PostgresToolRepository {
 }
 
 func (r *PostgresToolRepository) Create(ctx context.Context, tool *model.MCPTool) error {
-	const query = `INSERT INTO mcp_tools (server_id, name, description, category, tags, input_schema, version, published, health_status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, call_count, created_at, updated_at`
-	err := r.pool.QueryRow(ctx, query, tool.ServerID, tool.Name, tool.Description, tool.Category, tool.Tags, tool.InputSchema, tool.Version, tool.Published, tool.HealthStatus).Scan(&tool.ID, &tool.CallCount, &tool.CreatedAt, &tool.UpdatedAt)
+	const query = `INSERT INTO mcp_tools (server_id, category_id, name, description, category, tags, input_schema, version, published, health_status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, call_count, average_rating, rating_count, created_at, updated_at`
+	err := r.pool.QueryRow(ctx, query, tool.ServerID, tool.CategoryID, tool.Name, tool.Description, tool.Category, tool.Tags, tool.InputSchema, tool.Version, tool.Published, tool.HealthStatus).
+		Scan(&tool.ID, &tool.CallCount, &tool.AverageRating, &tool.RatingCount, &tool.CreatedAt, &tool.UpdatedAt)
 	return mapToolError(err)
 }
 
@@ -114,7 +117,7 @@ type toolRowScanner interface{ Scan(...any) error }
 
 func scanTool(row toolRowScanner) (*model.MCPTool, error) {
 	tool := new(model.MCPTool)
-	err := row.Scan(&tool.ID, &tool.ServerID, &tool.Name, &tool.Description, &tool.Category, &tool.Tags, &tool.InputSchema, &tool.Version, &tool.Published, &tool.IsSensitive, &tool.SensitiveLevel, &tool.HealthStatus, &tool.CallCount, &tool.CreatedAt, &tool.UpdatedAt)
+	err := row.Scan(&tool.ID, &tool.ServerID, &tool.CategoryID, &tool.Name, &tool.Description, &tool.Category, &tool.Tags, &tool.InputSchema, &tool.Version, &tool.Published, &tool.IsSensitive, &tool.SensitiveLevel, &tool.HealthStatus, &tool.CallCount, &tool.AverageRating, &tool.RatingCount, &tool.CreatedAt, &tool.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

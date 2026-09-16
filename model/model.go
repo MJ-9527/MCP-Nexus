@@ -96,6 +96,7 @@ type RegisterServerRequest struct {
 type MCPTool struct {
 	ID             int64           `json:"id" db:"id"`
 	ServerID       int64           `json:"server_id" db:"server_id"`
+	CategoryID     *int64          `json:"category_id,omitempty" db:"category_id"`
 	Name           string          `json:"name" db:"name"`
 	Description    string          `json:"description" db:"description"`
 	Category       string          `json:"category" db:"category"`
@@ -107,8 +108,19 @@ type MCPTool struct {
 	SensitiveLevel *string         `json:"sensitive_level,omitempty" db:"sensitive_level"`
 	HealthStatus   string          `json:"health_status" db:"health_status"`
 	CallCount      int64           `json:"call_count" db:"call_count"`
+	AverageRating  float64         `json:"average_rating" db:"average_rating"`
+	RatingCount    int64           `json:"rating_count" db:"rating_count"`
 	CreatedAt      time.Time       `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at" db:"updated_at"`
+}
+
+type ToolCategory struct {
+	ID          int64     `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	Slug        string    `json:"slug" db:"slug"`
+	Description string    `json:"description" db:"description"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type RegisterToolRequest struct {
@@ -146,5 +158,23 @@ type ToolVersion struct {
 	InputSchema json.RawMessage `json:"input_schema" db:"input_schema"`
 	Changelog   string          `json:"changelog" db:"changelog"`
 	Status      string          `json:"status" db:"status"`
+	IsCurrent   bool            `json:"is_current" db:"is_current"`
+	ReleasedAt  *time.Time      `json:"released_at,omitempty" db:"released_at"`
 	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at" db:"updated_at"`
+}
+
+type ToolRating struct {
+	ID        int64     `json:"id" db:"id"`
+	ToolID    int64     `json:"tool_id" db:"tool_id"`
+	UserID    int64     `json:"user_id" db:"user_id"`
+	Rating    int       `json:"rating" db:"rating"`
+	Comment   string    `json:"comment" db:"comment"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type ToolRatingSummary struct {
+	Average float64 `json:"average"`
+	Count   int64   `json:"count"`
 }
