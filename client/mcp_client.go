@@ -98,6 +98,46 @@ func (c *MCPClient) PostJSON(ctx context.Context, url string, payload any, heade
 	return respBody, nil
 }
 
+// DoRequest 通用 HTTP 请求方法，供 OpenAPI 翻译器复用连接池与超时控制（B10）。
+// 与 PostJSON 不同：支持任意 method；body 为已序列化的字节（可为 nil）；非 2xx
+// 不视为传输错误——返回 body 与 status，由调用方按业务语义判定 IsError。
+// 仅网络层故障（超时/不可达/响应体超限）返回 error，与 PostJSON 共用错误分类。
+func (c *MCPClient) DoRequest(ctx context.Context, method, url string, body []byte, headers map[string]string) ([]byte, int, error) {
+	var bodyReader io.Reader
+	if len(body) > 0 {
+		bodyReader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, 0, fmt.Errorf("build request: %w", err)
+	}
+	if len(body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Accept", "application/json")
+	for k, v := range c.defaultHeader {
+		req.Header.Set(k, v)
+	}
+	for k, v := range headers { // 网关透传 Header（request_id 等）
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, classifyClientError(err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.maxBodyBytes+1))
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: read body: %v", ErrUpstreamError, err)
+	}
+	if int64(len(respBody)) > c.maxBodyBytes {
+		return nil, 0, fmt.Errorf("%w: limit %d bytes", ErrBodyTooLarge, c.maxBodyBytes)
+	}
+	return respBody, resp.StatusCode, nil
+}
+
 // classifyClientError 将网络层错误归类为超时 / 不可达两类。
 func classifyClientError(err error) error {
 	// 上下文超时（整体调用超时）或网络超时

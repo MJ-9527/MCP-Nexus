@@ -92,6 +92,10 @@ func respondProxyError(c *gin.Context, err error) {
 		respondErrorCode(c, http.StatusNotFound, "SERVER_NOT_FOUND", err.Error())
 	case errors.Is(err, service.ErrServerUnavailable):
 		respondErrorCode(c, http.StatusServiceUnavailable, "SERVER_UNAVAILABLE", err.Error())
+	case errors.Is(err, service.ErrInvalidArguments):
+		respondErrorCode(c, http.StatusBadRequest, "INVALID_PARAMETERS", err.Error())
+	case errors.Is(err, service.ErrVersionMismatch):
+		respondErrorCode(c, http.StatusBadRequest, "VERSION_MISMATCH", err.Error())
 	case errors.Is(err, service.ErrUpstreamTimeout):
 		respondErrorCode(c, http.StatusGatewayTimeout, "UPSTREAM_TIMEOUT", err.Error())
 	case errors.Is(err, service.ErrUpstreamError):

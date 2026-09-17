@@ -32,6 +32,10 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	permissionService := service.NewToolPermissionService(permissionRepo, toolRepo, userRepo)
 	auditRepo := repository.NewPostgresAuditLogRepository(pool)
 	auditService := service.NewAuditLogService(auditRepo)
+	// B10：OpenAPI 翻译元数据 repository + 导入器
+	specRepo := repository.NewPostgresOpenAPISpecRepository(pool)
+	// B11：Skills 调用元数据 repository + 导入器
+	skillsSpecRepo := repository.NewPostgresSkillsSpecRepository(pool)
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
@@ -44,6 +48,12 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	auditHandler := handler.NewAuditLogHandler(auditService)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTTTL)
 	authHandler := handler.NewAuthHandler(authService)
+	// B10：OpenAPI 导入器 + handler
+	openapiImporter := service.NewOpenAPIImporter(serverRepo, toolRepo, specRepo)
+	openapiImportHandler := handler.NewOpenAPIImportHandler(openapiImporter)
+	// B11：Skills 导入器 + handler
+	skillsImporter := service.NewSkillsImporter(serverRepo, toolRepo, skillsSpecRepo)
+	skillsImportHandler := handler.NewSkillsImportHandler(skillsImporter)
 
 	api := r.Group("/api")
 	api.POST("/auth/login", authHandler.Login)
@@ -62,6 +72,8 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	serversManage.POST("/:id/activate", serverStatusHandler.ActivateServer)
 	serversManage.POST("/:id/offline", serverStatusHandler.OfflineServer)
 	serversManage.POST("/:id/health-check", serverHealthHandler.CheckServer)
+	serversManage.POST("/:id/import-openapi", openapiImportHandler.Import) // B10
+	serversManage.POST("/:id/import-skills", skillsImportHandler.Import)   // B11
 
 	tools := protected.Group("/tools")
 	tools.GET("", toolQueryHandler.ListTools)
@@ -90,6 +102,10 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	permissionClient := service.NewRolePermissionClient(permissionRepo)
 	proxySvc := service.NewProxyService(serverRepo, toolRepo, permissionClient)
 	proxySvc.SetAudit(auditService) // B8：调用链审计埋点
+	// B10：注入 OpenAPI 翻译依赖（specRepo + translator），调用链据此检测 OpenAPI 工具
+	proxySvc.SetOpenAPIDeps(specRepo, service.NewOpenAPITranslator(client.NewMCPClient(service.CallTimeout, client.DefaultMaxBodyBytes)))
+	// B11：注入 Skills 翻译依赖（skillsSpecRepo + translator），调用链据此检测 Skills 工具
+	proxySvc.SetSkillsDeps(skillsSpecRepo, service.NewSkillsTranslator(client.NewMCPClient(service.CallTimeout, client.DefaultMaxBodyBytes)))
 	proxyHandler := handler.NewProxyHandler(proxySvc)
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	limiter := middleware.NewRateLimiter(rdb, middleware.DefaultRoleLimits())
