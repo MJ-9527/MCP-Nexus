@@ -47,14 +47,19 @@ func (r *MemoryAuditLogRepository) List(_ context.Context, filter AuditLogFilter
 		result = append(result, entry)
 	}
 	total := int64(len(result))
-	// 分页
-	if filter.Offset > len(result) {
+	// 分页：AuditLogFilter 用 Page/PageSize 表示分页，此处转换为 offset/limit。
+	offset := 0
+	if filter.Page > 0 {
+		offset = (filter.Page - 1) * filter.PageSize
+	}
+	limit := filter.PageSize
+	if offset > len(result) {
 		result = nil
 	} else {
-		result = result[filter.Offset:]
+		result = result[offset:]
 	}
-	if filter.Limit > 0 && filter.Limit < len(result) {
-		result = result[:filter.Limit]
+	if limit > 0 && limit < len(result) {
+		result = result[:limit]
 	}
 	return result, total, nil
 }

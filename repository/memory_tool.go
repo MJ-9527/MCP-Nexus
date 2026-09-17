@@ -74,7 +74,7 @@ func (r *MemoryToolRepository) FindPublishedByName(_ context.Context, name strin
 	return nil, ErrNotFound
 }
 
-func (r *MemoryToolRepository) List(_ context.Context, filter ToolFilter) ([]*model.MCPTool, error) {
+func (r *MemoryToolRepository) List(_ context.Context, filter ToolFilter) ([]*model.MCPTool, int64, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	matched := make([]*model.MCPTool, 0, len(r.tools))
@@ -97,7 +97,7 @@ func (r *MemoryToolRepository) List(_ context.Context, filter ToolFilter) ([]*mo
 		x := *t
 		matched = append(matched, &x)
 	}
-	return matched, nil
+	return matched, int64(len(matched)), nil
 }
 
 func (r *MemoryToolRepository) UpdatePublished(_ context.Context, id int64, published bool) error {
@@ -108,5 +108,18 @@ func (r *MemoryToolRepository) UpdatePublished(_ context.Context, id int64, publ
 		return ErrNotFound
 	}
 	t.Published = published
+	return nil
+}
+
+// UpdateSensitivity 更新工具的敏感标记与敏感级别（与 PostgresToolRepository 对齐）。
+func (r *MemoryToolRepository) UpdateSensitivity(_ context.Context, id int64, sensitive bool, level *string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.tools[id]
+	if !ok {
+		return ErrNotFound
+	}
+	t.IsSensitive = sensitive
+	t.SensitiveLevel = level
 	return nil
 }

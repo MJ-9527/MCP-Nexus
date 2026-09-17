@@ -145,6 +145,8 @@ func (r *PostgresToolPermissionRepository) ListToolNamesByUser(ctx context.Conte
 		names = append(names, name)
 	}
 	return names, rows.Err()
+}
+
 func (r *PostgresToolPermissionRepository) ConfigureRolePermissions(ctx context.Context, toolID int64, sensitive bool, level *string, permissions []*model.ToolPermission) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

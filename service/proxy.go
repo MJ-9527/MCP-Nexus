@@ -72,7 +72,7 @@ func (s *ProxyService) ListTools(ctx context.Context, role string, userID int64)
 
 	// 仅已发布工具（下线工具不出现在发现列表）
 	published := true
-	tools, err := s.toolRepo.List(ctx, repository.ToolFilter{Published: &published})
+	tools, _, err := s.toolRepo.List(ctx, repository.ToolFilter{Published: &published})
 	if err != nil {
 		return nil, fmt.Errorf("list tools error: %w", err)
 	}
@@ -276,8 +276,12 @@ func (s *ProxyService) callSkillsTool(ctx context.Context, spec *model.SkillsSpe
 }
 
 // mapUpstreamError 将传输层错误映射为网关业务错误（B4）。
+// B13：熔断开启映射为 ErrServerUnavailable（503 SERVER_UNAVAILABLE），
+// 避免向已熔断上游继续发送请求。
 func mapUpstreamError(err error) error {
 	switch {
+	case errors.Is(err, client.ErrCircuitOpen):
+		return fmt.Errorf("%w: circuit open", ErrServerUnavailable)
 	case errors.Is(err, client.ErrUpstreamTimeout):
 		return fmt.Errorf("%w: %v", ErrUpstreamTimeout, errors.Unwrap(err))
 	case errors.Is(err, client.ErrServerUnreachable):
