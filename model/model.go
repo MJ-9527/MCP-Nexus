@@ -178,3 +178,61 @@ type ToolRatingSummary struct {
 	Average float64 `json:"average"`
 	Count   int64   `json:"count"`
 }
+
+//网关代理
+
+// McpToolView 返回给前端的工具简略视图
+type McpToolView struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// McpListToolsResponse /gateway/tools/list 的返回体
+type McpListToolsResponse struct {
+	Tools []McpToolView `json:"tools"`
+}
+
+// ---- B9 MCP 接入配置生成 ----
+
+// McpConfigResponse 为外部 Agent/IDE 生成的一站式接入配置：
+// 网关地址 + 认证方式 + 操作说明 + 当前账号可调用的工具清单。
+type McpConfigResponse struct {
+	Protocol   string            `json:"protocol"` // 当前网关协议标识（custom-rest）
+	Endpoint   string            `json:"endpoint"` // 网关 MCP 根地址，如 http://host:8080/mcp
+	Auth       McpAuthGuide      `json:"auth"`
+	Operations []McpOperationDoc `json:"operations"`
+	Tools      []McpToolView     `json:"tools"`
+}
+
+// McpAuthGuide 认证接入指引。
+type McpAuthGuide struct {
+	Type       string `json:"type"`        // bearer
+	TokenTTL   string `json:"token_ttl"`   // 令牌有效期，如 24h
+	LoginPath  string `json:"login_path"`  // POST /api/auth/login
+	HeaderName string `json:"header_name"` // Authorization
+	Example    string `json:"example"`     // 登录获取令牌示例
+}
+
+// McpOperationDoc 单个网关操作的调用说明与示例。
+type McpOperationDoc struct {
+	Name            string `json:"name"`
+	Method          string `json:"method"`
+	Path            string `json:"path"`
+	Description     string `json:"description"`
+	RequestExample  string `json:"request_example"`
+	ResponseExample string `json:"response_example"`
+}
+
+// McpToolCallRequest /gateway/tools/call 请求体
+type McpToolCallRequest struct {
+	Method    string                 `json:"method"`
+	ToolName  string                 `json:"toolName"`
+	Arguments map[string]interface{} `json:"arguments"`
+}
+
+// McpToolCallResponse /gateway/tools/call 上游MCP服务返回透传给调用方
+type McpToolCallResponse struct {
+	Content []map[string]interface{} `json:"content"`
+	IsError bool                     `json:"is_error,omitempty"`
+}

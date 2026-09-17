@@ -17,7 +17,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	r := router.SetupRouter(pool)
+	r := router.SetupRouter(pool, cfg)
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)
 	}

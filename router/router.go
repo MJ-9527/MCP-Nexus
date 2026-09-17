@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"MCP-Nexus/client"
+	"MCP-Nexus/config"
 	"MCP-Nexus/handler"
 	"MCP-Nexus/middleware"
 	"MCP-Nexus/repository"
@@ -11,14 +12,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
+func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
 	r.GET("/health", handler.Health)
 
+	// Repository → Service → Handler 装配（网关不绕过 Repository，不直接操作数据库）
 	serverRepo := repository.NewPostgresServerRepository(pool)
 	serverService := service.NewServerService(serverRepo)
 	serverHealthService := service.NewServerHealthService(serverRepo, client.NewHealthClient(5*time.Second))
@@ -39,35 +42,69 @@ func SetupRouter(pool *pgxpool.Pool) *gin.Engine {
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)
 	permissionHandler := handler.NewToolPermissionHandler(permissionService)
 	auditHandler := handler.NewAuditLogHandler(auditService)
+	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTTTL)
+	authHandler := handler.NewAuthHandler(authService)
 
 	api := r.Group("/api")
-	servers := api.Group("/servers")
-	servers.POST("", serverRegisterHandler.RegisterServer)
+	api.POST("/auth/login", authHandler.Login)
+
+	// B6：/api 管理面强制 JWT 认证；管理写操作仅限 admin 角色
+	protected := api.Group("")
+	protected.Use(middleware.JWTAuth(cfg.JWTSecret))
+
+	servers := protected.Group("/servers")
 	servers.GET("", serverQueryHandler.ListServers)
 	servers.GET("/:id", serverQueryHandler.GetServer)
-	servers.POST("/:id/activate", serverStatusHandler.ActivateServer)
-	servers.POST("/:id/offline", serverStatusHandler.OfflineServer)
-	servers.POST("/:id/health-check", serverHealthHandler.CheckServer)
+	manage := protected.Group("")
+	manage.Use(middleware.RequireRole("admin"))
+	serversManage := manage.Group("/servers")
+	serversManage.POST("", serverRegisterHandler.RegisterServer)
+	serversManage.POST("/:id/activate", serverStatusHandler.ActivateServer)
+	serversManage.POST("/:id/offline", serverStatusHandler.OfflineServer)
+	serversManage.POST("/:id/health-check", serverHealthHandler.CheckServer)
 
-	tools := api.Group("/tools")
-	tools.POST("", toolRegisterHandler.RegisterTool)
+	tools := protected.Group("/tools")
 	tools.GET("", toolQueryHandler.ListTools)
 	tools.GET("/:id", toolQueryHandler.GetTool)
-	tools.POST("/:id/publish", toolPublishHandler.PublishTool)
-	tools.POST("/:id/offline", toolPublishHandler.OfflineTool)
+	toolsManage := manage.Group("/tools")
+	toolsManage.POST("", toolRegisterHandler.RegisterTool)
+	toolsManage.POST("/:id/publish", toolPublishHandler.PublishTool)
+	toolsManage.POST("/:id/offline", toolPublishHandler.OfflineTool)
 
-	permissions := tools.Group("/:id/permissions")
+	permissions := toolsManage.Group("/:id/permissions")
 	permissions.POST("", permissionHandler.GrantPermission)
 	permissions.DELETE("", permissionHandler.RevokePermission)
 	permissions.GET("", permissionHandler.ListPermissions)
 	permissions.GET("/check", permissionHandler.CheckPermission)
 
-	auditLogs := api.Group("/audit-logs")
+	auditLogs := manage.Group("/audit-logs")
 	auditLogs.POST("", auditHandler.Create)
 	auditLogs.GET("", auditHandler.List)
 	audit := api.Group("/audit/logs")
 	audit.POST("", auditHandler.Create)
 	audit.GET("", auditHandler.List)
+
+	// MCP 网关代理（B1）：工具发现 + 调用转发，经统一调用链（权限过滤 → 状态检查 → 转发）
+	// B5：/mcp 强制 JWT 认证，角色与用户 ID 由令牌注入，不再信任 X-Role
+	// B7：JWT 之后挂 Redis 令牌桶限流（角色限额 admin 600/dev 300/agent 120 每分钟），Redis 不可用降级放行
+	permissionClient := service.NewRolePermissionClient(permissionRepo)
+	proxySvc := service.NewProxyService(serverRepo, toolRepo, permissionClient)
+	proxySvc.SetAudit(auditService) // B8：调用链审计埋点
+	proxyHandler := handler.NewProxyHandler(proxySvc)
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	limiter := middleware.NewRateLimiter(rdb, middleware.DefaultRoleLimits())
+	mcp := r.Group("/mcp")
+	mcp.Use(middleware.JWTAuth(cfg.JWTSecret))
+	mcp.Use(limiter.Middleware())
+	{
+		mcp.GET("/tools", proxyHandler.ListTools)
+		mcp.POST("/tools/:toolName/call", proxyHandler.CallTool)
+	}
+
+	// B9：MCP 接入配置生成（登录账号获取自己的接入指引与可用工具清单）
+	mcpConfigService := service.NewMcpConfigService(proxySvc, cfg.JWTTTL.String())
+	mcpConfigHandler := handler.NewMcpConfigHandler(mcpConfigService, cfg.PublicBaseURL)
+	protected.GET("/mcp-config", mcpConfigHandler.GetMcpConfig)
 
 	return r
 }

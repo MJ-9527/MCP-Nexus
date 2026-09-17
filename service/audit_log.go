@@ -29,7 +29,8 @@ func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRe
 	status := strings.TrimSpace(req.Status)
 	digest, summary := "", ""
 	if req.Parameters != nil {
-		data, err := json.Marshal(req.Parameters)
+		// B8 脱敏：参数落审计前递归掩码敏感字段（password/token/secret 等），再计算摘要
+		data, err := json.Marshal(SanitizeValue(req.Parameters))
 		if err != nil {
 			return nil, ErrInvalidAuditLog
 		}
