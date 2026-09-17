@@ -145,6 +145,31 @@ func (r *PostgresToolPermissionRepository) ListToolNamesByUser(ctx context.Conte
 		names = append(names, name)
 	}
 	return names, rows.Err()
+func (r *PostgresToolPermissionRepository) ConfigureRolePermissions(ctx context.Context, toolID int64, sensitive bool, level *string, permissions []*model.ToolPermission) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, `UPDATE mcp_tools SET is_sensitive=$1, sensitive_level=$2, updated_at=NOW() WHERE id=$3`, sensitive, level, toolID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM tool_permissions WHERE tool_id=$1 AND role_id IS NOT NULL`, toolID); err != nil {
+		return err
+	}
+	for _, p := range permissions {
+		if p == nil || p.RoleID == nil || p.ToolID != toolID || p.Action == "" {
+			return errors.New("invalid tool permission")
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO tool_permissions(tool_id,role_id,action) VALUES($1,$2,$3)`, toolID, p.RoleID, p.Action); err != nil {
+			return mapPermissionError(err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func mapPermissionError(err error) error {

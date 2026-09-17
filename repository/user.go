@@ -12,5 +12,6 @@ type UserRepository interface {
 	FindByUsername(ctx context.Context, username string) (*model.User, error)
 	CreateRole(ctx context.Context, role *model.Role) error
 	FindRoleByID(ctx context.Context, id int64) (*model.Role, error)
+	FindRoleByName(ctx context.Context, name string) (*model.Role, error)
 	AssignRole(ctx context.Context, userID, roleID int64) error
 }

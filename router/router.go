@@ -80,6 +80,9 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	auditLogs := manage.Group("/audit-logs")
 	auditLogs.POST("", auditHandler.Create)
 	auditLogs.GET("", auditHandler.List)
+	audit := api.Group("/audit/logs")
+	audit.POST("", auditHandler.Create)
+	audit.GET("", auditHandler.List)
 
 	// MCP 网关代理（B1）：工具发现 + 调用转发，经统一调用链（权限过滤 → 状态检查 → 转发）
 	// B5：/mcp 强制 JWT 认证，角色与用户 ID 由令牌注入，不再信任 X-Role

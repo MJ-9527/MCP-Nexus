@@ -39,25 +39,39 @@ type ToolPermission struct {
 }
 
 type AuditLog struct {
-	ID           int64     `json:"id" db:"id"`
-	RequestID    string    `json:"request_id" db:"request_id"`
-	UserID       *int64    `json:"user_id,omitempty" db:"user_id"`
-	ToolID       *int64    `json:"tool_id,omitempty" db:"tool_id"`
-	DurationMS   int64     `json:"duration_ms" db:"duration_ms"`
-	Status       string    `json:"status" db:"status"`
-	DeniedReason string    `json:"denied_reason,omitempty" db:"denied_reason"`
-	ParamsDigest string    `json:"params_digest,omitempty" db:"params_digest"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	ID                    int64     `json:"id" db:"id"`
+	RequestID             string    `json:"request_id" db:"request_id"`
+	UserID                *int64    `json:"user_id,omitempty" db:"user_id"`
+	ToolID                *int64    `json:"tool_id,omitempty" db:"tool_id"`
+	ServerID              *int64    `json:"server_id,omitempty" db:"server_id"`
+	ToolName              string    `json:"tool_name,omitempty" db:"tool_name"`
+	CallerRole            string    `json:"caller_role,omitempty" db:"caller_role"`
+	DurationMS            int64     `json:"duration_ms" db:"duration_ms"`
+	Status                string    `json:"status" db:"status"`
+	HTTPStatus            int       `json:"http_status" db:"http_status"`
+	DeniedReason          string    `json:"denied_reason,omitempty" db:"denied_reason"`
+	RejectReason          string    `json:"reject_reason,omitempty" db:"reject_reason"`
+	ParamsSummary         string    `json:"params_summary,omitempty" db:"params_summary"`
+	ParamsSensitiveMasked bool      `json:"params_sensitive_masked" db:"params_sensitive_masked"`
+	ParamsDigest          string    `json:"params_digest,omitempty" db:"params_digest"`
+	CostEstimate          float64   `json:"cost_estimate" db:"cost_estimate"`
+	CreatedAt             time.Time `json:"created_at" db:"created_at"`
 }
 
 type CreateAuditLogRequest struct {
-	RequestID    string `json:"request_id" binding:"required"`
-	UserID       *int64 `json:"user_id"`
-	ToolID       *int64 `json:"tool_id"`
-	DurationMS   int64  `json:"duration_ms"`
-	Status       string `json:"status" binding:"required"`
-	DeniedReason string `json:"denied_reason"`
-	Parameters   any    `json:"parameters"`
+	RequestID    string  `json:"request_id" binding:"required"`
+	UserID       *int64  `json:"user_id"`
+	ToolID       *int64  `json:"tool_id"`
+	ServerID     *int64  `json:"server_id"`
+	ToolName     string  `json:"tool_name"`
+	CallerRole   string  `json:"caller_role"`
+	DurationMS   int64   `json:"duration_ms"`
+	Status       string  `json:"status" binding:"required"`
+	HTTPStatus   int     `json:"http_status"`
+	DeniedReason string  `json:"denied_reason"`
+	RejectReason string  `json:"reject_reason"`
+	CostEstimate float64 `json:"cost_estimate"`
+	Parameters   any     `json:"parameters"`
 }
 type MCPServer struct {
 	ID                int64      `json:"id" db:"id"`
@@ -80,19 +94,33 @@ type RegisterServerRequest struct {
 	OwnerID     int64  `json:"owner_id"`
 }
 type MCPTool struct {
-	ID           int64           `json:"id" db:"id"`
-	ServerID     int64           `json:"server_id" db:"server_id"`
-	Name         string          `json:"name" db:"name"`
-	Description  string          `json:"description" db:"description"`
-	Category     string          `json:"category" db:"category"`
-	Tags         []string        `json:"tags" db:"tags"`
-	InputSchema  json.RawMessage `json:"input_schema" db:"input_schema"`
-	Version      string          `json:"version" db:"version"`
-	Published    bool            `json:"published" db:"published"`
-	HealthStatus string          `json:"health_status" db:"health_status"`
-	CallCount    int64           `json:"call_count" db:"call_count"`
-	CreatedAt    time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at" db:"updated_at"`
+	ID             int64           `json:"id" db:"id"`
+	ServerID       int64           `json:"server_id" db:"server_id"`
+	CategoryID     *int64          `json:"category_id,omitempty" db:"category_id"`
+	Name           string          `json:"name" db:"name"`
+	Description    string          `json:"description" db:"description"`
+	Category       string          `json:"category" db:"category"`
+	Tags           []string        `json:"tags" db:"tags"`
+	InputSchema    json.RawMessage `json:"input_schema" db:"input_schema"`
+	Version        string          `json:"version" db:"version"`
+	Published      bool            `json:"published" db:"published"`
+	IsSensitive    bool            `json:"is_sensitive" db:"is_sensitive"`
+	SensitiveLevel *string         `json:"sensitive_level,omitempty" db:"sensitive_level"`
+	HealthStatus   string          `json:"health_status" db:"health_status"`
+	CallCount      int64           `json:"call_count" db:"call_count"`
+	AverageRating  float64         `json:"average_rating" db:"average_rating"`
+	RatingCount    int64           `json:"rating_count" db:"rating_count"`
+	CreatedAt      time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at" db:"updated_at"`
+}
+
+type ToolCategory struct {
+	ID          int64     `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	Slug        string    `json:"slug" db:"slug"`
+	Description string    `json:"description" db:"description"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type RegisterToolRequest struct {
@@ -111,6 +139,18 @@ type GrantToolPermissionRequest struct {
 	Action *string `json:"action"`
 }
 
+type ToolPermissionMatrixItem struct {
+	Role    string `json:"role" binding:"required"`
+	CanRead bool   `json:"can_read"`
+	CanCall bool   `json:"can_call"`
+}
+
+type ConfigureToolPermissionsRequest struct {
+	IsSensitive    bool                       `json:"is_sensitive"`
+	SensitiveLevel *string                    `json:"sensitive_level"`
+	Permissions    []ToolPermissionMatrixItem `json:"permissions" binding:"required"`
+}
+
 type ToolVersion struct {
 	ID          int64           `json:"id" db:"id"`
 	ToolID      int64           `json:"tool_id" db:"tool_id"`
@@ -118,7 +158,25 @@ type ToolVersion struct {
 	InputSchema json.RawMessage `json:"input_schema" db:"input_schema"`
 	Changelog   string          `json:"changelog" db:"changelog"`
 	Status      string          `json:"status" db:"status"`
+	IsCurrent   bool            `json:"is_current" db:"is_current"`
+	ReleasedAt  *time.Time      `json:"released_at,omitempty" db:"released_at"`
 	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at" db:"updated_at"`
+}
+
+type ToolRating struct {
+	ID        int64     `json:"id" db:"id"`
+	ToolID    int64     `json:"tool_id" db:"tool_id"`
+	UserID    int64     `json:"user_id" db:"user_id"`
+	Rating    int       `json:"rating" db:"rating"`
+	Comment   string    `json:"comment" db:"comment"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type ToolRatingSummary struct {
+	Average float64 `json:"average"`
+	Count   int64   `json:"count"`
 }
 
 //网关代理

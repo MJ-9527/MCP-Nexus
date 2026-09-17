@@ -38,6 +38,9 @@ func (f *fakeUserRepository) FindByID(_ context.Context, id int64) (*model.User,
 func (f *fakeUserRepository) FindRoleByID(context.Context, int64) (*model.Role, error) {
 	return nil, repository.ErrNotFound
 }
+func (f *fakeUserRepository) FindRoleByName(context.Context, string) (*model.Role, error) {
+	return nil, repository.ErrNotFound
+}
 func (f *fakeUserRepository) CreateRole(context.Context, *model.Role) error  { return nil }
 func (f *fakeUserRepository) AssignRole(context.Context, int64, int64) error { return nil }
 
