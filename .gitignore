@@ -3,3 +3,4 @@
 *.exe
 *.test
 coverage.out
+examples/demo-service/demo-service

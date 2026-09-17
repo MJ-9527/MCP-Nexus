@@ -1,0 +1,2 @@
+这是 demo-service 的示例说明文件。
+仅供 seed,sql的read_file 工具演示。

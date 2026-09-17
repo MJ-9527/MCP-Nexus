@@ -4,9 +4,9 @@ services:
     container_name: mcp-nexus-postgres
     restart: unless-stopped
     env_file:
-      - ../.env
+      - ../.env.example
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../db/migrations:/docker-entrypoint-initdb.d:ro
@@ -27,6 +27,9 @@ services:
       - "8081:8081"
     environment:
       PORT: "8081"
+      DATABASE_URL: postgres://mcp_user:change-me@postgres:5432/mcp_platform?sslmode=disable
+      # 敏感工具（delete_customer）鉴权用的 API Key
+      API_KEY: "demo-api-key"
     depends_on:
       postgres:
         condition: service_healthy

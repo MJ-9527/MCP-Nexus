@@ -105,7 +105,7 @@ func (s *HealthCheckService) StartBackground(ctx context.Context, interval time.
 	}()
 }
 
-// check 探测单个 Server 并生成结果（不含持久化）。
+// check 探测单个 Server 并生成结果。
 func (s *HealthCheckService) check(ctx context.Context, server *model.MCPServer) *HealthCheckResult {
 	res := s.client.Check(ctx, server.Endpoint)
 	checkedAt := s.now()
