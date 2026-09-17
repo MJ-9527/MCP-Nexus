@@ -54,7 +54,7 @@ func (s *ProxyService) ListTools(ctx context.Context, role string, userID int64)
 
 	// 仅已发布工具（下线工具不出现在发现列表）
 	published := true
-	tools, err := s.toolRepo.List(ctx, repository.ToolFilter{Published: &published})
+	tools, _, err := s.toolRepo.List(ctx, repository.ToolFilter{Published: &published})
 	if err != nil {
 		return nil, fmt.Errorf("list tools error: %w", err)
 	}
@@ -95,12 +95,13 @@ func (s *ProxyService) CallTool(ctx context.Context, role string, userID int64, 
 	startedAt := time.Now()
 	var toolID int64
 	resp, err := s.callTool(ctx, role, userID, req, requestID, &toolID)
-	s.recordCallAudit(requestID, userID, toolID, startedAt, err, req)
+	s.recordCallAudit(requestID, role, userID, toolID, startedAt, err, req)
 	return resp, err
 }
 
 // recordCallAudit 异步落审计：不阻塞调用链；审计失败仅记日志不影响调用结果（B8）。
-func (s *ProxyService) recordCallAudit(requestID string, userID int64, toolID int64, startedAt time.Time, err error, req *model.McpToolCallRequest) {
+// 完整记录调用者角色（CallerRole）与目标工具名（ToolName），保证审计可追溯。
+func (s *ProxyService) recordCallAudit(requestID, role string, userID int64, toolID int64, startedAt time.Time, err error, req *model.McpToolCallRequest) {
 	if s.audit == nil || requestID == "" {
 		return
 	}
@@ -121,6 +122,8 @@ func (s *ProxyService) recordCallAudit(requestID string, userID int64, toolID in
 		RequestID:    requestID,
 		UserID:       &id,
 		ToolID:       toolPtr,
+		ToolName:     req.ToolName,
+		CallerRole:   role,
 		DurationMS:   time.Since(startedAt).Milliseconds(),
 		Status:       status,
 		DeniedReason: reason,

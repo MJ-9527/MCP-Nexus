@@ -41,20 +41,37 @@ func (r *MemoryAuditLogRepository) List(_ context.Context, filter AuditLogFilter
 		if filter.ToolID != nil && (entry.ToolID == nil || *entry.ToolID != *filter.ToolID) {
 			continue
 		}
+		if filter.ServerID != nil && (entry.ServerID == nil || *entry.ServerID != *filter.ServerID) {
+			continue
+		}
 		if filter.Status != "" && entry.Status != filter.Status {
+			continue
+		}
+		if filter.StartTime != nil && entry.CreatedAt.Before(*filter.StartTime) {
+			continue
+		}
+		if filter.EndTime != nil && entry.CreatedAt.After(*filter.EndTime) {
 			continue
 		}
 		result = append(result, entry)
 	}
 	total := int64(len(result))
-	// 分页
-	if filter.Offset > len(result) {
-		result = nil
-	} else {
-		result = result[filter.Offset:]
+	page, pageSize := filter.Page, filter.PageSize
+	if page <= 0 {
+		page = 1
 	}
-	if filter.Limit > 0 && filter.Limit < len(result) {
-		result = result[:filter.Limit]
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	if offset >= len(result) {
+		result = []*model.AuditLog{}
+	} else {
+		end := offset + pageSize
+		if end > len(result) {
+			end = len(result)
+		}
+		result = result[offset:end]
 	}
 	return result, total, nil
 }

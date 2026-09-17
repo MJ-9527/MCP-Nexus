@@ -106,10 +106,11 @@ func (h *ToolPermissionHandler) ListPermissions(c *gin.Context) {
 			item = gin.H{"role": role.Name, "can_read": false, "can_call": false}
 			grouped[*permission.RoleID] = item
 		}
-		if permission.Action == "read" {
+		// 与 service.PermissionActionView/Call 统一：read=可见，call=可调用
+		if permission.Action == service.PermissionActionView {
 			item["can_read"] = true
 		}
-		if permission.Action == "call" {
+		if permission.Action == service.PermissionActionCall {
 			item["can_call"] = true
 		}
 	}

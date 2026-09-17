@@ -44,7 +44,7 @@ func (r *PostgresToolRepository) FindPublishedByName(ctx context.Context, name s
 	return r.findOne(ctx, `SELECT `+toolColumns+` FROM mcp_tools WHERE name = $1 AND published = true ORDER BY id LIMIT 1`, name)
 }
 
-func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, error) {
+func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([]*model.MCPTool, int64, error) {
 	query := `SELECT ` + toolColumns + ` FROM mcp_tools`
 	conditions, args := make([]string, 0), make([]any, 0)
 	if filter.ServerID != nil {

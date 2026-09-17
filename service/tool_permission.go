@@ -171,10 +171,11 @@ func (s *ToolPermissionService) Configure(ctx context.Context, toolID int64, req
 			return nil, err
 		}
 		if item.CanRead {
-			permissions = append(permissions, &model.ToolPermission{ToolID: toolID, RoleID: &role.ID, Action: "read"})
+			// 与 ProxyService.ListTools 查询的 PermissionActionView 保持一致：可见 = 可读
+			permissions = append(permissions, &model.ToolPermission{ToolID: toolID, RoleID: &role.ID, Action: PermissionActionView})
 		}
 		if item.CanCall {
-			permissions = append(permissions, &model.ToolPermission{ToolID: toolID, RoleID: &role.ID, Action: "call"})
+			permissions = append(permissions, &model.ToolPermission{ToolID: toolID, RoleID: &role.ID, Action: PermissionActionCall})
 		}
 	}
 	if err := s.permissions.ConfigureRolePermissions(ctx, toolID, req.IsSensitive, req.SensitiveLevel, permissions); err != nil {

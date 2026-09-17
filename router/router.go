@@ -56,7 +56,7 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	servers.GET("", serverQueryHandler.ListServers)
 	servers.GET("/:id", serverQueryHandler.GetServer)
 	manage := protected.Group("")
-	manage.Use(middleware.RequireRole("admin"))
+	manage.Use(middleware.RequireRole(middleware.RoleAdmin))
 	serversManage := manage.Group("/servers")
 	serversManage.POST("", serverRegisterHandler.RegisterServer)
 	serversManage.POST("/:id/activate", serverStatusHandler.ActivateServer)
@@ -77,16 +77,17 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	permissions.GET("", permissionHandler.ListPermissions)
 	permissions.GET("/check", permissionHandler.CheckPermission)
 
-	auditLogs := manage.Group("/audit-logs")
-	auditLogs.POST("", auditHandler.Create)
-	auditLogs.GET("", auditHandler.List)
-	audit := api.Group("/audit/logs")
+	// 审计日志（B8）：规范路径与旧路径都经过 JWT 和平台管理员鉴权。
+	audit := manage.Group("/audit/logs")
 	audit.POST("", auditHandler.Create)
 	audit.GET("", auditHandler.List)
+	auditLegacy := manage.Group("/audit-logs")
+	auditLegacy.POST("", auditHandler.Create)
+	auditLegacy.GET("", auditHandler.List)
 
 	// MCP 网关代理（B1）：工具发现 + 调用转发，经统一调用链（权限过滤 → 状态检查 → 转发）
 	// B5：/mcp 强制 JWT 认证，角色与用户 ID 由令牌注入，不再信任 X-Role
-	// B7：JWT 之后挂 Redis 令牌桶限流（角色限额 admin 600/dev 300/agent 120 每分钟），Redis 不可用降级放行
+	// B7：JWT 之后挂 Redis 令牌桶限流（platform_admin 600/tool_developer 300/agent_caller 120 每分钟），Redis 不可用降级放行
 	permissionClient := service.NewRolePermissionClient(permissionRepo)
 	proxySvc := service.NewProxyService(serverRepo, toolRepo, permissionClient)
 	proxySvc.SetAudit(auditService) // B8：调用链审计埋点
