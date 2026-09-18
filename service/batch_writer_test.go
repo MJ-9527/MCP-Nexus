@@ -184,3 +184,121 @@ func TestBatchWriterFlushFailureTolerance(t *testing.T) {
 		t.Fatalf("失败恢复后应正常 flush，实际 flushed=%d", stats.Flushed)
 	}
 }
+
+// recordingSink 记录收到的批次，用于验证分析存储（ClickHouse）投递。
+type recordingSink struct {
+	mu        sync.Mutex
+	batches   [][]*model.AuditLog
+	failCount int32
+}
+
+func (s *recordingSink) WriteBatch(_ context.Context, logs []*model.AuditLog) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dup := make([]*model.AuditLog, len(logs))
+	copy(dup, logs)
+	s.batches = append(s.batches, dup)
+	if atomic.LoadInt32(&s.failCount) > 0 {
+		atomic.AddInt32(&s.failCount, -1)
+		return errors.New("injected sink failure")
+	}
+	return nil
+}
+
+func (s *recordingSink) total() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, b := range s.batches {
+		n += len(b)
+	}
+	return n
+}
+
+// B14：同一批审计记录应同时投递到主存储与分析存储（ClickHouse）。
+func TestBatchWriterForwardsBatchToSink(t *testing.T) {
+	repo := &failingBatchRepo{}
+	sink := &recordingSink{}
+	w := NewBatchAuditWriter(repo, 3, time.Hour, 1024)
+	w.SetSink(sink)
+	w.Start()
+	defer w.Stop()
+
+	for i := 0; i < 3; i++ {
+		w.Submit(&model.AuditLog{RequestID: "r", Status: "success", DurationMS: int64(i)})
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if sink.total() >= 3 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := sink.total(); got != 3 {
+		t.Fatalf("分析存储应收 3 条，实际 %d", got)
+	}
+	repo.mu.Lock()
+	primaryBatches := len(repo.batches)
+	repo.mu.Unlock()
+	if primaryBatches != 1 {
+		t.Fatalf("主存储应为 1 批，实际 %d", primaryBatches)
+	}
+	if stats := w.Stats(); stats.Flushed != 3 || stats.SinkFailed != 0 {
+		t.Fatalf("计数不符: flushed=%d sink_failed=%d", stats.Flushed, stats.SinkFailed)
+	}
+}
+
+// B14：分析存储故障不得影响主存储写入，只计数。
+func TestBatchWriterSinkFailureIsolated(t *testing.T) {
+	repo := &failingBatchRepo{}
+	sink := &recordingSink{}
+	atomic.StoreInt32(&sink.failCount, 5) // 让分析存储持续失败
+	w := NewBatchAuditWriter(repo, 2, time.Hour, 1024)
+	w.SetSink(sink)
+	w.Start()
+	defer w.Stop()
+
+	w.Submit(&model.AuditLog{RequestID: "r1", Status: "success"})
+	w.Submit(&model.AuditLog{RequestID: "r2", Status: "success"})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if w.Stats().SinkFailed >= 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	stats := w.Stats()
+	if stats.SinkFailed < 1 {
+		t.Fatalf("分析存储失败应被计数，实际 sink_failed=%d", stats.SinkFailed)
+	}
+	if stats.Flushed != 2 {
+		t.Fatalf("主存储不应受分析存储失败影响，实际 flushed=%d", stats.Flushed)
+	}
+	if stats.FlushFailed != 0 {
+		t.Fatalf("主存储不应记为失败，实际 flush_failed=%d", stats.FlushFailed)
+	}
+}
+
+// B14：未注入分析存储时行为与之前一致（回归保护）。
+func TestBatchWriterWithoutSinkKeepsBehavior(t *testing.T) {
+	repo := &failingBatchRepo{}
+	w := NewBatchAuditWriter(repo, 2, time.Hour, 1024)
+	w.Start()
+	defer w.Stop()
+
+	w.Submit(&model.AuditLog{RequestID: "r1", Status: "success"})
+	w.Submit(&model.AuditLog{RequestID: "r2", Status: "success"})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if w.Stats().Flushed >= 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	stats := w.Stats()
+	if stats.Flushed != 2 || stats.SinkFailed != 0 {
+		t.Fatalf("未配置分析存储时计数不符: flushed=%d sink_failed=%d", stats.Flushed, stats.SinkFailed)
+	}
+}

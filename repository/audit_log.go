@@ -28,3 +28,13 @@ type AuditLogRepository interface {
 	BatchCreate(ctx context.Context, logs []*model.AuditLog) error
 	List(ctx context.Context, filter AuditLogFilter) ([]*model.AuditLog, int64, error)
 }
+
+// AuditLogSink 审计日志的附加落地目标（B14）。
+// 与 AuditLogRepository 的区别：只写不读，用于把同一批审计记录额外投递到
+// 分析型存储（ClickHouse）。
+//
+// 约定：签名中的 Addr 为空表示未配置该目标；投递失败只记日志与计数，
+// 不影响主存储写入，也不阻塞调用链（由 BatchAuditWriter 负责调度与容错）。
+type AuditLogSink interface {
+	WriteBatch(ctx context.Context, logs []*model.AuditLog) error
+}

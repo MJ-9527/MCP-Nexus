@@ -15,6 +15,13 @@ type Config struct {
 	JWTTTL        time.Duration
 	RedisAddr     string
 	PublicBaseURL string // 网关对外可达地址（B9 接入配置生成用），空则用请求 Host 推导
+
+	// B14：ClickHouse 审计分析存储（走 HTTP 接口）。
+	// Addr 为空表示不启用该分析存储：审计仍写 PostgreSQL，行为与之前完全一致。
+	ClickHouseAddr string // 形如 clickhouse:8123 或 http://clickhouse:8123
+	ClickHouseDB   string // 数据库名，默认 mcp_analytics
+	ClickHouseUser string
+	ClickHousePass string
 }
 
 func Load() Config {
@@ -48,5 +55,21 @@ func Load() Config {
 	// 对外可达地址（B9）：供接入配置生成，部署在反代/容器后建议显式设置
 	publicBaseURL := strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
 
-	return Config{Port: port, JWTSecret: jwtSecret, JWTTTL: jwtTTL, RedisAddr: redisAddr, PublicBaseURL: publicBaseURL}
+	// ClickHouse 审计分析存储（B14）：未配置则审计只落 PostgreSQL
+	chDB := os.Getenv("CLICKHOUSE_DB")
+	if chDB == "" {
+		chDB = "mcp_analytics"
+	}
+
+	return Config{
+		Port:           port,
+		JWTSecret:      jwtSecret,
+		JWTTTL:         jwtTTL,
+		RedisAddr:      redisAddr,
+		PublicBaseURL:  publicBaseURL,
+		ClickHouseAddr: strings.TrimRight(strings.TrimSpace(os.Getenv("CLICKHOUSE_HTTP_ADDR")), "/"),
+		ClickHouseDB:   chDB,
+		ClickHouseUser: os.Getenv("CLICKHOUSE_USER"),
+		ClickHousePass: os.Getenv("CLICKHOUSE_PASSWORD"),
+	}
 }

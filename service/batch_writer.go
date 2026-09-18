@@ -38,6 +38,7 @@ const (
 // BatchAuditWriter 异步批量审计写入器（B14）。
 type BatchAuditWriter struct {
 	repo      repository.AuditLogRepository
+	sink      repository.AuditLogSink // 附加落地目标（如 ClickHouse 分析存储），可为 nil
 	queue     chan *model.AuditLog
 	batchSize int
 	interval  time.Duration
@@ -47,8 +48,9 @@ type BatchAuditWriter struct {
 	started     bool
 	stopped     bool
 	dropped     int64 // 因队列满而丢弃的记录数
-	flushFailed int64 // flush 失败次数
-	flushed     int64 // 成功写入记录数
+	flushFailed int64 // 主存储 flush 失败次数
+	flushed     int64 // 主存储成功写入记录数
+	sinkFailed  int64 // 附加落地目标投递失败次数
 	stopCh      chan struct{}
 	doneCh      chan struct{}
 }
@@ -117,17 +119,22 @@ func (w *BatchAuditWriter) Submit(log *model.AuditLog) {
 	}
 }
 
-// Stats 返回观测快照（drop/flush 失败/成功写入计数）。
+// SetSink 注入附加落地目标（B14，如 ClickHouse 分析存储）。必须在 Start 前调用。
+// 传 nil 表示不启用分析存储，行为与之前完全一致。
+func (w *BatchAuditWriter) SetSink(sink repository.AuditLogSink) { w.sink = sink }
+
+// Stats 返回观测快照（drop / flush 失败 / 成功写入 / 分析存储投递失败计数）。
 type WriterStats struct {
 	Dropped     int64 `json:"dropped"`
 	FlushFailed int64 `json:"flush_failed"`
 	Flushed     int64 `json:"flushed"`
+	SinkFailed  int64 `json:"sink_failed"`
 }
 
 func (w *BatchAuditWriter) Stats() WriterStats {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return WriterStats{Dropped: w.dropped, FlushFailed: w.flushFailed, Flushed: w.flushed}
+	return WriterStats{Dropped: w.dropped, FlushFailed: w.flushFailed, Flushed: w.flushed, SinkFailed: w.sinkFailed}
 }
 
 // run 后台主循环：周期性或攒满阈值触发 flush；收到 stop 信号后做最后一次 flush。
@@ -172,18 +179,30 @@ func (w *BatchAuditWriter) run() {
 	}
 }
 
-// flush 提交一次批量写入。失败仅记日志与计数，不重试。
+// flush 提交一次批量写入。主存储与分析存储独立投递、独立计数，失败仅记日志不重试。
+// 两者互不影响：分析存储故障不会导致主存储审计记录丢失，反之亦然。
 func (w *BatchAuditWriter) flush(logs []*model.AuditLog) {
 	ctx, cancel := context.WithTimeout(context.Background(), flushTimeout)
 	defer cancel()
+
 	if err := w.repo.BatchCreate(ctx, logs); err != nil {
 		w.mu.Lock()
 		w.flushFailed++
 		w.mu.Unlock()
-		log.Printf("[audit-batch] flush %d 条失败 err=%v", len(logs), err)
-		return
+		log.Printf("[audit-batch] 主存储写入 %d 条失败 err=%v", len(logs), err)
+	} else {
+		w.mu.Lock()
+		w.flushed += int64(len(logs))
+		w.mu.Unlock()
 	}
-	w.mu.Lock()
-	w.flushed += int64(len(logs))
-	w.mu.Unlock()
+
+	// 附加分析存储（ClickHouse）：同一批记录额外投递，失败只计数不影响主链路。
+	if w.sink != nil {
+		if err := w.sink.WriteBatch(ctx, logs); err != nil {
+			w.mu.Lock()
+			w.sinkFailed++
+			w.mu.Unlock()
+			log.Printf("[audit-batch] 分析存储写入 %d 条失败 err=%v", len(logs), err)
+		}
+	}
 }

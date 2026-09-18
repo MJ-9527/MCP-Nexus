@@ -4,6 +4,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"MCP-Nexus/repository"
 )
 
 // B14 调用指标采集器。
@@ -67,10 +69,56 @@ type UpstreamStatus struct {
 // MetricsSnapshot 完整指标快照（响应 GET /api/metrics）。
 type MetricsSnapshot struct {
 	GeneratedAt time.Time            `json:"generated_at"`
+	Source      string               `json:"source"` // clickhouse=分析存储聚合；memory=进程内实时指标
+	Window      string               `json:"window"` // 统计窗口，all 表示不限时间
 	Total       ToolMetricSnapshot   `json:"total"`
 	ByTool      []ToolMetricSnapshot `json:"by_tool"`
 	Writer      WriterStats          `json:"writer"` // 审计批量写入器状态
 	Upstreams   []UpstreamStatus     `json:"upstreams"`
+}
+
+// 指标来源标识。
+const (
+	MetricsSourceClickHouse = "clickhouse"
+	MetricsSourceMemory     = "memory"
+)
+
+// SnapshotFromAggregates 把分析存储的聚合结果映射为 /api/metrics 响应结构（B14）。
+// 字段与内存采集器输出保持一致，成功率由计数推导，前端无需区分来源。
+// source 为 MetricsSourceClickHouse / MetricsSourceMemory；window 为窗口标签。
+func SnapshotFromAggregates(total repository.ToolMetrics, byTool []repository.ToolMetrics, source, window string) MetricsSnapshot {
+	snap := MetricsSnapshot{
+		GeneratedAt: time.Now(),
+		Source:      source,
+		Window:      window,
+		Total:       toToolMetricSnapshot("__total__", total),
+		ByTool:      make([]ToolMetricSnapshot, 0, len(byTool)),
+	}
+	for _, item := range byTool {
+		snap.ByTool = append(snap.ByTool, toToolMetricSnapshot(item.ToolName, item))
+	}
+	return snap
+}
+
+// toToolMetricSnapshot 聚合结果 → 响应结构，成功率 = 成功数 / 总数。
+func toToolMetricSnapshot(name string, m repository.ToolMetrics) ToolMetricSnapshot {
+	rate := 0.0
+	if m.Count > 0 {
+		rate = float64(m.SuccessCnt) / float64(m.Count)
+	}
+	return ToolMetricSnapshot{
+		ToolName:    name,
+		Count:       m.Count,
+		SuccessCnt:  m.SuccessCnt,
+		DeniedCnt:   m.DeniedCnt,
+		FailedCnt:   m.FailedCnt,
+		SuccessRate: rate,
+		P50MS:       m.P50MS,
+		P95MS:       m.P95MS,
+		P99MS:       m.P99MS,
+		AvgMS:       m.AvgMS,
+		MaxMS:       m.MaxMS,
+	}
 }
 
 // NewMetricsCollector 构造采集器。bufferSize <= 0 走默认值。
@@ -133,7 +181,7 @@ func recordSample(ts *toolStats, durationMS int64, status string) {
 // 这里只负责聚合调用耗时指标。
 func (m *MetricsCollector) Snapshot() MetricsSnapshot {
 	if m == nil {
-		return MetricsSnapshot{GeneratedAt: time.Now()}
+		return MetricsSnapshot{GeneratedAt: time.Now(), Source: MetricsSourceMemory, Window: "process"}
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -147,6 +195,8 @@ func (m *MetricsCollector) Snapshot() MetricsSnapshot {
 	})
 	return MetricsSnapshot{
 		GeneratedAt: time.Now(),
+		Source:      MetricsSourceMemory,
+		Window:      "process",
 		Total:       statsSnapshot("__total__", m.total),
 		ByTool:      tools,
 	}

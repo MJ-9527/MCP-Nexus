@@ -140,7 +140,7 @@ func (s *ProxyService) CallTool(ctx context.Context, role string, userID int64, 
 	var toolID int64
 	resp, err := s.callTool(ctx, role, userID, req, requestID, &toolID)
 	durationMS := time.Since(startedAt).Milliseconds()
-	s.recordCallAudit(requestID, userID, toolID, durationMS, req, err)
+	s.recordCallAudit(requestID, userID, role, toolID, durationMS, req, err)
 	s.observeMetrics(req.ToolName, durationMS, err)
 	return resp, err
 }
@@ -165,7 +165,11 @@ func (s *ProxyService) observeMetrics(toolName string, durationMS int64, err err
 //   - B14 起改为 Submit 异步入队，由 BatchAuditWriter 后台批量落库
 //   - writer 未注入时由 AuditLogService.Submit 内部回退为同步 Create（兼容旧测试）
 //   - 调用链永不阻塞：Submit 内部 select default 路径在队满时直接丢弃并计数
-func (s *ProxyService) recordCallAudit(requestID string, userID int64, toolID int64, durationMS int64, req *model.McpToolCallRequest, err error) {
+//
+// 字段补全（B14）：ToolName 与 CallerRole 全部落库。ToolName 直接取自请求，
+// 因此在 RBAC 阶段就被拒绝、拿不到 toolID 的调用也能定位到具体工具，
+// 否则分析存储里只剩 request_id + denied_reason，无法按工具做聚合。
+func (s *ProxyService) recordCallAudit(requestID string, userID int64, role string, toolID int64, durationMS int64, req *model.McpToolCallRequest, err error) {
 	if s.audit == nil || requestID == "" {
 		return
 	}
@@ -186,6 +190,8 @@ func (s *ProxyService) recordCallAudit(requestID string, userID int64, toolID in
 		RequestID:    requestID,
 		UserID:       &id,
 		ToolID:       toolPtr,
+		ToolName:     req.ToolName, // 来自请求路径，被拒时同样可定位工具
+		CallerRole:   role,
 		DurationMS:   durationMS,
 		Status:       status,
 		DeniedReason: reason,

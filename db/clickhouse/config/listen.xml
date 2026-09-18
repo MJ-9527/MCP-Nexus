@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse 监听配置：强制监听所有 IPv4 地址。
+  默认配置可能只监听 ::（IPv6），在 WSL2 / 容器网络下从宿主机不可达，
+  会导致网关的审计分析写入与健康检查连接失败。
+-->
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+</clickhouse>

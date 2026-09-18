@@ -140,3 +140,48 @@ func TestAuditParametersSanitizedBeforeDigest(t *testing.T) {
 		t.Fatalf("摘要应基于脱敏后参数: got=%s want=%s", entry.ParamsDigest, rawHash)
 	}
 }
+
+// B14：被 RBAC 拒绝的调用也要记录工具名与角色 —— 此时还没查到 toolID，
+// 若不落 ToolName，分析存储里就无法按工具维度统计拒绝情况。
+func TestCallToolAuditFillsToolNameAndRoleWhenDenied(t *testing.T) {
+	svc, toolRepo, serverRepo := newFixture(t)
+	seedOnline(t, serverRepo, toolRepo, "http://unused")
+	auditRepo := repository.NewMemoryAuditLogRepository()
+	svc.SetAudit(NewAuditLogService(auditRepo))
+
+	_, err := svc.CallTool(context.Background(), "anonymous", 42, &model.McpToolCallRequest{ToolName: "query_sales"}, "req-tn-1")
+	if !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("期望权限拒绝: %v", err)
+	}
+	entry := waitForAudit(t, auditRepo, 1)[0]
+	if entry.ToolName != "query_sales" {
+		t.Fatalf("被拒记录也应带工具名，实际 %q", entry.ToolName)
+	}
+	if entry.CallerRole != "anonymous" {
+		t.Fatalf("应记录调用者角色，实际 %q", entry.CallerRole)
+	}
+	if entry.ToolID != nil {
+		t.Fatalf("被拒时尚未解析到工具，tool_id 应为空，实际 %v", *entry.ToolID)
+	}
+}
+
+// B14：成功调用的审计同样带工具名与角色。
+func TestCallToolAuditFillsToolNameAndRoleOnSuccess(t *testing.T) {
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer downstream.Close()
+
+	svc, auditRepo := auditFixture(t, downstream.URL)
+	if _, err := svc.CallTool(context.Background(), "agent", 1,
+		&model.McpToolCallRequest{ToolName: "query_sales", Arguments: map[string]any{"month": "2026-08"}}, "req-tn-2"); err != nil {
+		t.Fatal(err)
+	}
+	entry := waitForAudit(t, auditRepo, 1)[0]
+	if entry.ToolName != "query_sales" || entry.CallerRole != "agent" {
+		t.Fatalf("成功记录应带工具名与角色: tool=%q role=%q", entry.ToolName, entry.CallerRole)
+	}
+	if entry.ToolID == nil || *entry.ToolID != 1 {
+		t.Fatalf("成功记录应带 tool_id=1: %+v", entry.ToolID)
+	}
+}

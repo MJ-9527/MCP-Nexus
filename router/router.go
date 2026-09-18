@@ -1,6 +1,7 @@
 package router
 
 import (
+	"log"
 	"time"
 
 	"MCP-Nexus/client"
@@ -35,6 +36,31 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	// B14：审计异步批量写入器（500ms 或 100 条触发 flush）。由调用方（main.go）
 	// 负责在启动时 Start、退出前 Stop。注入到 auditService 后 Submit 走异步入队。
 	auditWriter := service.NewBatchAuditWriter(auditRepo, service.DefaultBatchSize, service.DefaultBatchInterval, service.DefaultQueueCapacity)
+	// B14：ClickHouse 审计分析存储（可选）。配置了 CLICKHOUSE_HTTP_ADDR 才启用；
+	// 启用后同一批审计记录会额外投递到 ClickHouse，PostgreSQL 主存储与查询接口不受影响。
+	// 同时把 /api/metrics 的指标来源切到 ClickHouse 聚合（可回溯、重启不丢）。
+	var auditMetrics repository.AuditMetricsRepository
+	if cfg.ClickHouseAddr != "" {
+		sink, err := repository.NewClickHouseAuditSink(
+			cfg.ClickHouseAddr, cfg.ClickHouseDB, repository.DefaultClickHouseTable,
+			cfg.ClickHouseUser, cfg.ClickHousePass, 5*time.Second)
+		if err != nil {
+			log.Printf("[audit] ClickHouse 分析存储配置无效，本次仅写 PostgreSQL：%v", err)
+		} else {
+			auditWriter.SetSink(sink)
+			log.Printf("[audit] 已启用 ClickHouse 分析存储 %s(%s.%s)", cfg.ClickHouseAddr, cfg.ClickHouseDB, repository.DefaultClickHouseTable)
+		}
+		// 聚合查询比单次写入慢，超时放宽到 10s
+		metricsRepo, err := repository.NewClickHouseMetricsRepository(
+			cfg.ClickHouseAddr, cfg.ClickHouseDB, repository.DefaultClickHouseTable,
+			cfg.ClickHouseUser, cfg.ClickHousePass, 10*time.Second)
+		if err != nil {
+			log.Printf("[metrics] ClickHouse 指标源配置无效，/api/metrics 将使用进程内指标：%v", err)
+		} else {
+			auditMetrics = metricsRepo
+			log.Printf("[metrics] /api/metrics 指标来源：ClickHouse 聚合")
+		}
+	}
 	auditService.SetBatchWriter(auditWriter)
 	// B10：OpenAPI 翻译元数据 repository + 导入器
 	specRepo := repository.NewPostgresOpenAPISpecRepository(pool)
@@ -114,8 +140,8 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	// B11：注入 Skills 翻译依赖（skillsSpecRepo + translator），调用链据此检测 Skills 工具
 	proxySvc.SetSkillsDeps(skillsSpecRepo, service.NewSkillsTranslator(client.NewMCPClient(service.CallTimeout, client.DefaultMaxBodyBytes)))
 	proxyHandler := handler.NewProxyHandler(proxySvc)
-	// B14：指标查询 handler（依赖已装配完毕的 proxySvc）
-	metricsHandler := handler.NewMetricsHandler(proxySvc)
+	// B14：指标查询 handler（依赖已装配完毕的 proxySvc 与可选的 ClickHouse 聚合源）
+	metricsHandler := handler.NewMetricsHandler(proxySvc, auditMetrics)
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	limiter := middleware.NewRateLimiter(rdb, middleware.DefaultRoleLimits())
 	mcp := r.Group("/mcp")
