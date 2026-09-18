@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"MCP-Nexus/client"
@@ -26,6 +25,7 @@ type ProxyService struct {
 	translator       *OpenAPITranslator               // B10 OpenAPI 调用翻译器（specRepo 为 nil 时不使用）
 	skillsSpecRepo   repository.SkillsSpecRepository  // B11 Skills 翻译元数据（可 nil：无 Skills 工具时跳过）
 	skillsTranslator *SkillsTranslator                // B11 Skills 调用翻译器（skillsSpecRepo 为 nil 时不使用）
+	metrics          *MetricsCollector                // B14 调用指标采集：可 nil（无指标依赖时跳过采集）
 }
 
 func NewProxyService(serverRepo repository.ServerRepository,
@@ -41,6 +41,31 @@ func NewProxyService(serverRepo repository.ServerRepository,
 
 // SetAudit 注入审计服务（B8）。必须在首次调用前设置。
 func (s *ProxyService) SetAudit(audit *AuditLogService) { s.audit = audit }
+
+// SetMetrics 注入指标采集器（B14）。必须在首次调用前设置。
+func (s *ProxyService) SetMetrics(m *MetricsCollector) { s.metrics = m }
+
+// Metrics 暴露指标采集器（B14），供 handler 层 /api/metrics 查询。
+// 未注入时返回 nil，handler 自行处理空值。
+func (s *ProxyService) Metrics() *MetricsCollector { return s.metrics }
+
+// Breakers 暴露熔断器注册表（B14），供 handler 层 /api/metrics 查询上游状态。
+// mcpClient 未初始化时返回 nil。
+func (s *ProxyService) Breakers() *client.CircuitBreakerRegistry {
+	if s.mcpClient == nil {
+		return nil
+	}
+	return s.mcpClient.Breakers()
+}
+
+// AuditWriter 暴露审计批量写入器（B14），供 handler 层 /api/metrics 查询 writer 状态。
+// audit 未注入或未配置 writer 时返回 nil。
+func (s *ProxyService) AuditWriter() *BatchAuditWriter {
+	if s.audit == nil {
+		return nil
+	}
+	return s.audit.writer
+}
 
 // SetOpenAPIDeps 注入 OpenAPI 翻译依赖（B10）。必须在首次调用前设置。
 // specRepo 为 nil 表示该实例不支持 OpenAPI 工具（遇到 OpenAPI 工具会返回上游错误）。
@@ -108,17 +133,39 @@ const (
 	AuditStatusFailed  = "failed"
 )
 
-// CallTool 调用前检查（B3/B6）→ 转发下游（B2）→ 统一业务错误（B4）→ 审计埋点（B8）。
+// CallTool 调用前检查（B3/B6）→ 转发下游（B2）→ 统一业务错误（B4）→ 审计埋点（B8/B14）。
+// B14：审计改为 Submit 异步入队（不阻塞调用链），同时采集调用指标。
 func (s *ProxyService) CallTool(ctx context.Context, role string, userID int64, req *model.McpToolCallRequest, requestID string) (*model.McpToolCallResponse, error) {
 	startedAt := time.Now()
 	var toolID int64
 	resp, err := s.callTool(ctx, role, userID, req, requestID, &toolID)
-	s.recordCallAudit(requestID, userID, toolID, startedAt, err, req)
+	durationMS := time.Since(startedAt).Milliseconds()
+	s.recordCallAudit(requestID, userID, toolID, durationMS, req, err)
+	s.observeMetrics(req.ToolName, durationMS, err)
 	return resp, err
 }
 
-// recordCallAudit 异步落审计：不阻塞调用链；审计失败仅记日志不影响调用结果（B8）。
-func (s *ProxyService) recordCallAudit(requestID string, userID int64, toolID int64, startedAt time.Time, err error, req *model.McpToolCallRequest) {
+// observeMetrics 采集调用指标（B14）。metrics 未注入时 no-op，永不阻塞。
+func (s *ProxyService) observeMetrics(toolName string, durationMS int64, err error) {
+	if s.metrics == nil {
+		return
+	}
+	status := AuditStatusSuccess
+	if err != nil {
+		if errors.Is(err, ErrPermissionDenied) {
+			status = AuditStatusDenied
+		} else {
+			status = AuditStatusFailed
+		}
+	}
+	s.metrics.Observe(toolName, durationMS, status)
+}
+
+// recordCallAudit 提交审计（B8/B14）：
+//   - B14 起改为 Submit 异步入队，由 BatchAuditWriter 后台批量落库
+//   - writer 未注入时由 AuditLogService.Submit 内部回退为同步 Create（兼容旧测试）
+//   - 调用链永不阻塞：Submit 内部 select default 路径在队满时直接丢弃并计数
+func (s *ProxyService) recordCallAudit(requestID string, userID int64, toolID int64, durationMS int64, req *model.McpToolCallRequest, err error) {
 	if s.audit == nil || requestID == "" {
 		return
 	}
@@ -139,18 +186,13 @@ func (s *ProxyService) recordCallAudit(requestID string, userID int64, toolID in
 		RequestID:    requestID,
 		UserID:       &id,
 		ToolID:       toolPtr,
-		DurationMS:   time.Since(startedAt).Milliseconds(),
+		DurationMS:   durationMS,
 		Status:       status,
 		DeniedReason: reason,
-		Parameters:   req.Arguments, // Record 内部统一脱敏后摘要，原文不落库
+		Parameters:   req.Arguments, // buildAuditLog 内部统一脱敏后摘要，原文不落库
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		if _, auditErr := s.audit.Record(ctx, entry); auditErr != nil {
-			log.Printf("[audit] 落审计失败 request_id=%s status=%s err=%v", requestID, status, auditErr)
-		}
-	}()
+	// B14：异步入队。校验/脱敏/摘要都在 buildAuditLog 内完成，这里无需再启 goroutine。
+	s.audit.Submit(entry)
 }
 
 // callTool 核心调用链，toolID 用于审计记录。

@@ -17,6 +17,13 @@ func (f *fakeAuditLogRepository) Create(_ context.Context, log *model.AuditLog) 
 	return nil
 }
 
+func (f *fakeAuditLogRepository) BatchCreate(_ context.Context, logs []*model.AuditLog) error {
+	if len(logs) > 0 {
+		f.log = logs[len(logs)-1]
+	}
+	return nil
+}
+
 func (f *fakeAuditLogRepository) List(context.Context, repository.AuditLogFilter) ([]*model.AuditLog, int64, error) {
 	if f.log == nil {
 		return nil, 0, nil

@@ -32,6 +32,10 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	permissionService := service.NewToolPermissionService(permissionRepo, toolRepo, userRepo)
 	auditRepo := repository.NewPostgresAuditLogRepository(pool)
 	auditService := service.NewAuditLogService(auditRepo)
+	// B14：审计异步批量写入器（500ms 或 100 条触发 flush）。由调用方（main.go）
+	// 负责在启动时 Start、退出前 Stop。注入到 auditService 后 Submit 走异步入队。
+	auditWriter := service.NewBatchAuditWriter(auditRepo, service.DefaultBatchSize, service.DefaultBatchInterval, service.DefaultQueueCapacity)
+	auditService.SetBatchWriter(auditWriter)
 	// B10：OpenAPI 翻译元数据 repository + 导入器
 	specRepo := repository.NewPostgresOpenAPISpecRepository(pool)
 	// B11：Skills 调用元数据 repository + 导入器
@@ -54,6 +58,8 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	// B11：Skills 导入器 + handler
 	skillsImporter := service.NewSkillsImporter(serverRepo, toolRepo, skillsSpecRepo)
 	skillsImportHandler := handler.NewSkillsImportHandler(skillsImporter)
+	// B14：指标采集器（handler 在 proxySvc 装配后创建）
+	metricsCollector := service.NewMetricsCollector(service.DefaultMetricsBufferSize)
 
 	api := r.Group("/api")
 	api.POST("/auth/login", authHandler.Login)
@@ -101,12 +107,15 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	// B7：JWT 之后挂 Redis 令牌桶限流（角色限额 admin 600/dev 300/agent 120 每分钟），Redis 不可用降级放行
 	permissionClient := service.NewRolePermissionClient(permissionRepo)
 	proxySvc := service.NewProxyService(serverRepo, toolRepo, permissionClient)
-	proxySvc.SetAudit(auditService) // B8：调用链审计埋点
+	proxySvc.SetAudit(auditService)       // B8：调用链审计埋点（B14 起经 Submit 异步入队）
+	proxySvc.SetMetrics(metricsCollector) // B14：调用链指标采集
 	// B10：注入 OpenAPI 翻译依赖（specRepo + translator），调用链据此检测 OpenAPI 工具
 	proxySvc.SetOpenAPIDeps(specRepo, service.NewOpenAPITranslator(client.NewMCPClient(service.CallTimeout, client.DefaultMaxBodyBytes)))
 	// B11：注入 Skills 翻译依赖（skillsSpecRepo + translator），调用链据此检测 Skills 工具
 	proxySvc.SetSkillsDeps(skillsSpecRepo, service.NewSkillsTranslator(client.NewMCPClient(service.CallTimeout, client.DefaultMaxBodyBytes)))
 	proxyHandler := handler.NewProxyHandler(proxySvc)
+	// B14：指标查询 handler（依赖已装配完毕的 proxySvc）
+	metricsHandler := handler.NewMetricsHandler(proxySvc)
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	limiter := middleware.NewRateLimiter(rdb, middleware.DefaultRoleLimits())
 	mcp := r.Group("/mcp")
@@ -122,5 +131,17 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	mcpConfigHandler := handler.NewMcpConfigHandler(mcpConfigService, cfg.PublicBaseURL)
 	protected.GET("/mcp-config", mcpConfigHandler.GetMcpConfig)
 
+	// B14：可观测性统计接口（admin 鉴权）
+	manage.GET("/metrics", metricsHandler.GetMetrics)
+
+	// B14：启动审计批量写入器后台 goroutine，并把 writer 暴露给包级变量，
+	// 供 main.go 在收到退出信号时优雅 Stop（保证残留记录落地）。
+	AuditWriterForShutdown = auditWriter
+	auditWriter.Start()
+
 	return r
 }
+
+// AuditWriterForShutdown 暴露 writer 引用供 main.go 在退出时 Stop。
+// 当前简化方案：未来应改为 SetupRouter 返回包含 writer 的 ServiceBundle。
+var AuditWriterForShutdown *service.BatchAuditWriter

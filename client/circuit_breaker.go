@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"sort"
 	"sync"
 	"time"
 )
@@ -176,4 +177,30 @@ func (r *CircuitBreakerRegistry) Get(endpoint string) *CircuitBreaker {
 	cb := NewCircuitBreaker(r.threshold, r.cooldown)
 	r.breakers[endpoint] = cb
 	return cb
+}
+
+// UpstreamStatusItem 单个 endpoint 的熔断器状态（B14 可观测性输出）。
+type UpstreamStatusItem struct {
+	Endpoint     string
+	State        CircuitState
+	FailureCount int
+}
+
+// List 返回所有已注册 endpoint 的熔断器状态快照（B14 可观测性）。
+// 仅读路径，不创建新熔断器；返回顺序按 endpoint 名升序，便于展示稳定。
+func (r *CircuitBreakerRegistry) List() []UpstreamStatusItem {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]UpstreamStatusItem, 0, len(r.breakers))
+	for endpoint, cb := range r.breakers {
+		cb.mu.Lock()
+		items = append(items, UpstreamStatusItem{
+			Endpoint:     endpoint,
+			State:        cb.state,
+			FailureCount: cb.failureCount,
+		})
+		cb.mu.Unlock()
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Endpoint < items[j].Endpoint })
+	return items
 }

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"sync"
+	"time"
 
 	"MCP-Nexus/model"
 )
@@ -23,7 +24,29 @@ func (r *MemoryAuditLogRepository) Create(_ context.Context, log *model.AuditLog
 	defer r.mu.Unlock()
 	r.scope++
 	log.ID = r.scope
+	if log.CreatedAt.IsZero() {
+		log.CreatedAt = time.Now()
+	}
 	r.logs = append(r.logs, log)
+	return nil
+}
+
+// BatchCreate 批量 append，自增 ID 顺序填充（B14）。
+func (r *MemoryAuditLogRepository) BatchCreate(_ context.Context, logs []*model.AuditLog) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		r.scope++
+		log.ID = r.scope
+		if log.CreatedAt.IsZero() {
+			log.CreatedAt = now
+		}
+		r.logs = append(r.logs, log)
+	}
 	return nil
 }
 
