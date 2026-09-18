@@ -179,6 +179,17 @@ type ToolRatingSummary struct {
 	Count   int64   `json:"count"`
 }
 
+type ToolAdaptationTask struct {
+	ID           int64     `json:"id" db:"id"`
+	ToolID       int64     `json:"tool_id" db:"tool_id"`
+	TaskType     string    `json:"task_type" db:"task_type"`
+	Status       string    `json:"status" db:"status"`
+	SourceURL    string    `json:"source_url,omitempty" db:"source_url"`
+	ErrorMessage string    `json:"error_message,omitempty" db:"error_message"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+}
+
 //网关代理
 
 // McpToolView 返回给前端的工具简略视图
