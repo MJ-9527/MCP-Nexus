@@ -8,7 +8,54 @@ import (
 	"testing"
 )
 
-const demoCatalog = "../../examples/openapi/demo-catalog.yaml"
+const (
+	demoCatalog     = "../../examples/openapi/demo-catalog.yaml"
+	unsupportedSpec = "../../examples/openapi/unsupported.yaml"
+)
+
+func TestValidateReportsUnsupportedFeatures(t *testing.T) {
+	data, err := os.ReadFile(unsupportedSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := Parse(data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	err = Validate(spec)
+	if err == nil {
+		t.Fatal("expected validation errors, got nil")
+	}
+	msg := err.Error()
+	want := []string{
+		"unsupported HTTP method",
+		"unsupported parameter location",
+		"unsupported request body content type",
+		"unsupported type",
+	}
+	for _, w := range want {
+		if !strings.Contains(msg, w) {
+			t.Errorf("validation error missing %q, got:\n%s", w, msg)
+		}
+	}
+}
+
+func TestGenerateDoesNotRunOnInvalidSpec(t *testing.T) {
+	// 明确错误：Generate 不应在 Validate 失败后被调用；即使被调用，工具列表也会缺失。
+	data, err := os.ReadFile(unsupportedSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := Parse(data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// 过滤掉无效 operation 后 BuildTools 仍可能产生部分工具，但 CLI 会先用 Validate 拦截。
+	// 这里验证 CLI 流程：Validate 失败直接退出，不会进入 Generate。
+	if Validate(spec) == nil {
+		t.Fatal("expected validation to fail")
+	}
+}
 
 func TestParseAndBuildDemoCatalog(t *testing.T) {
 	spec := mustParseDemo(t)

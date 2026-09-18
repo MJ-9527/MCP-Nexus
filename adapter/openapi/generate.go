@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Tool 是一次 operation 转换出的 MCP 工具元数据。
+// 一次 operation 转换出的 MCP 工具元数据。
 type Tool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
@@ -18,12 +18,12 @@ type Tool struct {
 	UsesBearer  bool            `json:"-"`
 }
 
-// Options 控制生成行为。
+// 控制生成行为。
 type Options struct {
 	ModuleName string // 生成项目的 go module 名
 }
 
-// BuildTools 将 Spec 的每个 GET/POST operation 转成 MCP 工具（按 path 稳定排序）。
+// 将 Spec 的每个 GET/POST operation 转成 MCP 工具（按 path 稳定排序）。
 func BuildTools(spec *Spec) ([]Tool, error) {
 	paths := make([]string, 0, len(spec.Paths))
 	for p := range spec.Paths {
@@ -66,7 +66,7 @@ func buildTool(spec *Spec, path, method string, op *Operation) Tool {
 	return t
 }
 
-// buildInputSchema 将 path/query/header/body 参数合并为一个 JSON Schema。
+// 将 path/query/header/body 参数合并为一个 JSON Schema。
 func buildInputSchema(spec *Spec, op *Operation) json.RawMessage {
 	props := map[string]any{}
 	var required []string
@@ -106,7 +106,7 @@ func buildInputSchema(spec *Spec, op *Operation) json.RawMessage {
 	return b
 }
 
-// schemaToJSON 将 *Schema 转成 JSON Schema map（解析 $ref）。
+// *Schema 转成 JSON Schema map（解析 $ref）。
 func schemaToJSON(spec *Spec, s *Schema) map[string]any {
 	s = resolveSchema(spec, s)
 	out := map[string]any{}

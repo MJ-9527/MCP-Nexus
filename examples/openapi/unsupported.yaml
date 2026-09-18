@@ -1,0 +1,74 @@
+# unsupported.yaml — 生成器不支持的 OpenAPI 特性示例（成员 C / C11）
+#
+# 用于验证 openapi-gen 对不支持特性返回明确错误，而不是静默生成错误代码。
+openapi: 3.0.3
+info:
+  title: Unsupported Example
+  version: 1.0.0
+servers:
+  - url: https://example.com
+
+paths:
+  /users:
+    # DELETE 不在支持的 GET/POST 子集内
+    delete:
+      operationId: deleteUser
+      summary: 删除用户（不支持）
+      responses:
+        "204":
+          description: deleted
+
+  /webhooks:
+    # PUT 不在支持的子集内
+    put:
+      operationId: updateWebhook
+      summary: 更新 webhook（不支持）
+      responses:
+        "200":
+          description: ok
+
+  /upload:
+    post:
+      operationId: uploadFile
+      summary: 上传文件（multipart/form-data 不支持）
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: ok
+
+  /cookie:
+    get:
+      operationId: readCookie
+      summary: 使用 cookie 参数（不支持）
+      parameters:
+        - name: session
+          in: cookie
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+
+components:
+  securitySchemes:
+    # OAuth2 不支持
+    OAuth2:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://example.com/auth
+          scopes: {}
+    # OpenID Connect 不支持
+    OpenID:
+      type: openIdConnect
+      openIdConnectUrl: https://example.com/.well-known/openid-configuration

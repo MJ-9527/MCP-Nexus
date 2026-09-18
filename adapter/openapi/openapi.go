@@ -1,4 +1,4 @@
-// Package openapi 实现 MVP 限定的 OpenAPI 3.x → MCP 生成器（成员 C）。
+// Package openapi 实现 MVP 限定的 OpenAPI 3.x → MCP 生成器。
 //
 // 支持子集：GET/POST、path/query/header/body 参数、API Key 与 Bearer Token、
 // 基础响应 Schema。其余特性在 Validate 阶段返回明确错误，绝不静默生成错误代码。
@@ -18,6 +18,7 @@ import (
 // OpenAPI 3.x 受限子集的数据结构
 // ---------------------------------------------------------------------------
 
+// 文档的受限子集
 type Spec struct {
 	OpenAPI    string                `yaml:"openapi" json:"openapi"`
 	Info       Info                  `yaml:"info" json:"info"`
@@ -46,6 +47,7 @@ type PathItem struct {
 	Patch  *Operation `yaml:"patch" json:"patch"`
 }
 
+// 操作的受限子集
 type Operation struct {
 	OperationID string                `yaml:"operationId" json:"operationId"`
 	Summary     string                `yaml:"summary" json:"summary"`

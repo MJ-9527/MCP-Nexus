@@ -1,4 +1,4 @@
-// openapi-gen 将 OpenAPI 3.x 文档（JSON/YAML）生成 Go MCP Server 骨架（成员 C）。
+// openapi-gen 将 OpenAPI 3.x 文档（JSON/YAML）生成 Go MCP Server 骨架。
 package main
 
 import (
