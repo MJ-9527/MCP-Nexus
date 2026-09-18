@@ -32,7 +32,7 @@ type HealthCheckResult struct {
 	CheckedAt    time.Time
 }
 
-// HealthCheck 探测指定 Server，返回健康状态与耗时（暂不持久化）。
+// HealthCheck 探测指定 Server，返回健康状态与耗时，并持久化 health_status / last_health_check_at。
 func (s *HealthCheckService) HealthCheck(ctx context.Context, id int64) (*HealthCheckResult, error) {
 	server, err := s.servers.FindByID(ctx, id)
 	if err != nil {
