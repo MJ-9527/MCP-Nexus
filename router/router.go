@@ -17,9 +17,15 @@ func SetupRouter(pool *pgxpool.Pool) (*gin.Engine, *service.HealthCheckService) 
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
-	r.GET("/health", handler.Health)
-
 	serverRepo := repository.NewPostgresServerRepository(pool)
+
+	healthClient := client.NewHealthClient(5 * time.Second)
+	healthHandler := handler.NewHealthHandler(pool, healthClient, []handler.DownstreamService{
+		{Name: "demo-service", Endpoint: "http://demo-service:8081"},
+		{Name: "skills-adapter", Endpoint: "http://demo-skills:8082"},
+	})
+	r.GET("/health", healthHandler.Health)
+
 	serverService := service.NewServerService(serverRepo)
 	toolRepo := repository.NewPostgresToolRepository(pool)
 	toolService := service.NewToolService(toolRepo, serverRepo)
@@ -29,7 +35,6 @@ func SetupRouter(pool *pgxpool.Pool) (*gin.Engine, *service.HealthCheckService) 
 	serverStatusHandler := handler.NewServerStatusHandler(serverService)
 
 	// 健康检查（成员 C）：探测 + 后台定时检查；持久化走 ServerRepository.UpdateHealth。
-	healthClient := client.NewHealthClient(5 * time.Second)
 	healthCheckService := service.NewHealthCheckService(serverRepo, healthClient)
 	healthCheckHandler := handler.NewHealthCheckHandler(healthCheckService)
 
