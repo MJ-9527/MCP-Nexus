@@ -64,9 +64,29 @@ curl -X POST http://localhost:8081/tools/query_customer/call \
 curl -X POST http://localhost:8082/tools/calculate_vat/call \
   -H 'Content-Type: application/json' \
   -d '{"amount":100}'
+
+# demo-service 指标（C14）
+curl http://localhost:8081/metrics
 ```
 
-### 6. 停止
+### 6. 查看结构化日志（C14）
+
+每条请求日志包含 `request_id`、`method`、`path`、`status`、`duration_ms`、`response_size`：
+
+```bash
+docker logs -f deploy-demo-service-1
+```
+
+传入自定义 `X-Request-ID` 可在网关、demo-service、skills-adapter 之间串联一次调用链：
+
+```bash
+curl -H 'X-Request-ID: trace-20260921-001' \
+  -X POST http://localhost:8081/tools/query_customer/call \
+  -H 'Content-Type: application/json' \
+  -d '{"region":"华东","limit":5}'
+```
+
+### 7. 停止
 
 ```bash
 docker compose down -v
@@ -92,6 +112,8 @@ docker compose down -v
 │   └── skills/          # Skills 示例包（C12）
 ├── deploy/
 │   └── docker-compose.yml   # 一键部署（C13）
+├── docs/
+│   └── ops-runbook.md   # 备份恢复与故障演练（C15）
 ├── db/migrations/       # 数据库迁移与种子数据
 └── does/                # 任务文档
 ```
