@@ -20,7 +20,7 @@ func NewHealthCheckHandler(s *service.HealthCheckService) *HealthCheckHandler {
 }
 
 func (h *HealthCheckHandler) HealthCheck(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("serversId"), 10, 64)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, "服务器ID无效")
 		return

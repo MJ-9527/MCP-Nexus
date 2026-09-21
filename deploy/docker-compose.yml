@@ -19,6 +19,45 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: mcp-nexus-redis
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    container_name: mcp-nexus-clickhouse
+    restart: unless-stopped
+    ports:
+      - "18123:8123"
+      - "19000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: mcp_analytics
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --query 'SELECT 1' > /dev/null 2>&1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
   demo-service:
     build:
       context: ../examples/demo-service
@@ -42,19 +81,68 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-  # gateway:
-  #   build:
-  #     context: ../gateway
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     PORT: "8080"
-  #   depends_on:
-  #     demo-service:
-  #       condition: service_healthy
-  #     postgres:
-  #       condition: service_healthy
+
+  skills-adapter:
+    container_name: demo-skills
+    build:
+      context: ../examples/skills/adapter
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      PORT: "8082"
+    depends_on:
+      demo-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f -s http://localhost:8082/health | jq -r .status"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: cmd/server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mcp_platform
+      POSTGRES_USER: mcp_user
+      POSTGRES_PASSWORD: change-me
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "8123"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      demo-service:
+        condition: service_healthy
+      skills-adapter:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f -s http://localhost:8080/health | jq -r '.data.status'"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 15
 
 volumes:
   postgres_data:
+  redis_data:
+  clickhouse_data:
