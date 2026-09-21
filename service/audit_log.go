@@ -54,7 +54,7 @@ func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRe
 }
 
 func (s *AuditLogService) List(ctx context.Context, filter repository.AuditLogFilter) ([]*model.AuditLog, int64, error) {
-	if s == nil || s.logs == nil || filter.Page < 0 || filter.PageSize < 0 {
+	if s == nil || s.logs == nil || filter.Page < 0 || filter.PageSize < 0 || filter.PageSize > 100 {
 		return nil, 0, ErrInvalidAuditLog
 	}
 	return s.logs.List(ctx, filter)
