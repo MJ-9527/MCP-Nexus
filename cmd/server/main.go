@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
-  "MCP-Nexus/config"
-	"MCP-Nexus/repository"
+	"MCP-Nexus/config"
 	"MCP-Nexus/router"
-	"MCP-Nexus/service"
+
+	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
 func main() {
@@ -23,40 +27,61 @@ func main() {
 	}
 	defer pool.Close()
 
-	r := router.SetupRouter(pool, cfg)
-
-	// B14：监听退出信号，优雅关闭审计批量写入器，保证已入队记录落地。
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigCh
-		log.Printf("收到信号 %v，开始优雅关闭...", sig)
-		if router.AuditWriterForShutdown != nil {
-			router.AuditWriterForShutdown.Stop()
-		}
-		os.Exit(0)
-	}()
-
-	var analytics *service.AsyncAuditAnalyticsSink
+	var clickhouseConn clickhouse.Conn
 	clickhouseConn, clickhouseErr := config.NewClickHouse(ctx, cfg)
 	if clickhouseErr != nil {
 		log.Printf("连接 ClickHouse 失败，分析审计将禁用但主服务继续运行：%v", clickhouseErr)
 	} else {
-		defer clickhouseConn.Close()
 		schema, readErr := os.ReadFile("db/clickhouse/001_a13_audit_logs.sql")
 		if readErr != nil {
 			log.Printf("读取 ClickHouse schema 失败：%v", readErr)
-		} else if execErr := clickhouseConn.Exec(ctx, string(schema)); execErr != nil {
+		} else if execErr := executeSchema(ctx, clickhouseConn, string(schema)); execErr != nil {
 			log.Printf("初始化 ClickHouse schema 失败：%v", execErr)
 		} else {
-			analytics = service.NewAsyncAuditAnalyticsSink(repository.NewClickHouseAuditAnalyticsSink(clickhouseConn), 1000, 100, time.Second)
-			defer analytics.Close()
 			log.Printf("ClickHouse 已连接：%s/%s", cfg.ClickHouseAddr, cfg.ClickHouseDatabase)
 		}
 	}
 
-	r := router.SetupRouterWithAnalytics(pool, cfg, clickhouseConn, analytics)
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatal(err)
+	r, auditWriter := router.SetupRouterWithAnalytics(pool, cfg, clickhouseConn)
+	server := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 10 * time.Second}
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("服务已启动，监听 %s", server.Addr)
+		errCh <- server.ListenAndServe()
+	}()
+
+	signalCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	select {
+	case <-signalCtx.Done():
+		log.Printf("收到退出信号，开始优雅关闭...")
+	case serveErr := <-errCh:
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			log.Printf("HTTP 服务异常退出：%v", serveErr)
+		}
 	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP 服务关闭超时：%v", err)
+	}
+	auditWriter.Stop()
+	if clickhouseConn != nil {
+		clickhouseConn.Close()
+	}
+}
+
+// executeSchema 逐条执行建表/升级语句，ClickHouse HTTP 协议不接受多语句请求。
+func executeSchema(ctx context.Context, conn clickhouse.Conn, schema string) error {
+	for _, statement := range strings.Split(schema, ";") {
+		statement = strings.TrimSpace(statement)
+		if statement == "" {
+			continue
+		}
+		if err := conn.Exec(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
 }

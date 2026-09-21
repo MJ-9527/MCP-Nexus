@@ -24,6 +24,10 @@ func DefaultRoleLimits() map[string]Limit {
 		RoleAdmin:     {Capacity: 600, Refill: 10},
 		RoleDeveloper: {Capacity: 300, Refill: 5},
 		RoleAgent:     {Capacity: 120, Refill: 2},
+		// 兼容合并前签发的旧角色值；新代码统一使用上述三个规范名。
+		"admin":     {Capacity: 600, Refill: 10},
+		"developer": {Capacity: 300, Refill: 5},
+		"agent":     {Capacity: 120, Refill: 2},
 	}
 }
 

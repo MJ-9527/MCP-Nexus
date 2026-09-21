@@ -7,11 +7,10 @@
 --   - 排序键取 (created_at, request_id)，兼顾时间范围扫描与单请求定位
 --   - params 只保存脱敏后的 sha256 摘要，原文永不落库
 --
--- 注意：库名需与网关配置 CLICKHOUSE_DB 保持一致（默认 mcp_analytics）。
-CREATE DATABASE IF NOT EXISTS mcp_analytics;
-
-CREATE TABLE IF NOT EXISTS mcp_analytics.audit_logs
+-- 建表脚本由官方镜像在 CLICKHOUSE_DB 指定的库中执行。
+CREATE TABLE IF NOT EXISTS mcp_audit_logs
 (
+	 event_date              Date DEFAULT toDate(created_at),
     request_id              String,
     user_id                 Nullable(Int64),
     tool_id                 Nullable(Int64),
@@ -30,5 +29,6 @@ CREATE TABLE IF NOT EXISTS mcp_analytics.audit_logs
     created_at              DateTime64(3, 'UTC')
 )
 ENGINE = MergeTree
-PARTITION BY toYYYYMM(created_at)
-ORDER BY (created_at, request_id);
+PARTITION BY toYYYYMM(event_date)
+ORDER BY (event_date, created_at, ifNull(tool_id, 0), request_id)
+TTL event_date + INTERVAL 180 DAY;

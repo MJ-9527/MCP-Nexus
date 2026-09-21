@@ -18,10 +18,10 @@ type Config struct {
 
 	// B14：ClickHouse 审计分析存储（走 HTTP 接口）。
 	// Addr 为空表示不启用该分析存储：审计仍写 PostgreSQL，行为与之前完全一致。
-	ClickHouseAddr string // 形如 clickhouse:8123 或 http://clickhouse:8123
-	ClickHouseDB   string // 数据库名，默认 mcp_analytics
-	ClickHouseUser string
-	ClickHousePass string
+	ClickHouseAddr     string // 形如 clickhouse:8123 或 http://clickhouse:8123
+	ClickHouseDatabase string // 数据库名，默认 mcp_nexus
+	ClickHouseUser     string
+	ClickHousePassword string
 }
 
 func Load() Config {
@@ -54,34 +54,32 @@ func Load() Config {
 
 	// 对外可达地址（B9）：供接入配置生成，部署在反代/容器后建议显式设置
 	publicBaseURL := strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
-	clickHouseAddr := os.Getenv("CLICKHOUSE_ADDR")
+	clickHouseAddr := strings.TrimSpace(os.Getenv("CLICKHOUSE_ADDR"))
 	if clickHouseAddr == "" {
-		clickHouseAddr = "localhost:8123"
+		// 兼容 B14 早期配置名。未配置时不启用 ClickHouse。
+		clickHouseAddr = strings.TrimSpace(os.Getenv("CLICKHOUSE_HTTP_ADDR"))
 	}
 	clickHouseDatabase := os.Getenv("CLICKHOUSE_DATABASE")
 	if clickHouseDatabase == "" {
-		clickHouseDatabase = "default"
+		clickHouseDatabase = os.Getenv("CLICKHOUSE_DB")
+	}
+	if clickHouseDatabase == "" {
+		clickHouseDatabase = "mcp_nexus"
 	}
 	clickHouseUser := os.Getenv("CLICKHOUSE_USER")
 	if clickHouseUser == "" {
 		clickHouseUser = "default"
 	}
 
-	// ClickHouse 审计分析存储（B14）：未配置则审计只落 PostgreSQL
-	chDB := os.Getenv("CLICKHOUSE_DB")
-	if chDB == "" {
-		chDB = "mcp_analytics"
-	}
-
 	return Config{
-		Port:           port,
-		JWTSecret:      jwtSecret,
-		JWTTTL:         jwtTTL,
-		RedisAddr:      redisAddr,
-		PublicBaseURL:  publicBaseURL,
-		ClickHouseAddr: strings.TrimRight(strings.TrimSpace(os.Getenv("CLICKHOUSE_HTTP_ADDR")), "/"),
-		ClickHouseDB:   chDB,
-		ClickHouseUser: os.Getenv("CLICKHOUSE_USER"),
-		ClickHousePass: os.Getenv("CLICKHOUSE_PASSWORD"),
+		Port:               port,
+		JWTSecret:          jwtSecret,
+		JWTTTL:             jwtTTL,
+		RedisAddr:          redisAddr,
+		PublicBaseURL:      publicBaseURL,
+		ClickHouseAddr:     strings.TrimRight(clickHouseAddr, "/"),
+		ClickHouseDatabase: clickHouseDatabase,
+		ClickHouseUser:     clickHouseUser,
+		ClickHousePassword: os.Getenv("CLICKHOUSE_PASSWORD"),
 	}
 }

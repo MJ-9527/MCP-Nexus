@@ -27,7 +27,10 @@ services:
     container_name: mcp-nexus-clickhouse
     restart: unless-stopped
     environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-mcp_analytics}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-mcp_nexus}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-mcp_nexus}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-change-me}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
       - "8123:8123" # HTTP 接口，网关审计写入走这里
       - "9000:9000" # 原生协议，供 clickhouse-client / 其他分析工具使用

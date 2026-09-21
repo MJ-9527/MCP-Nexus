@@ -17,11 +17,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouter(pool *pgxpool.Pool, cfg config.Config, analytics ...*service.AsyncAuditAnalyticsSink) *gin.Engine {
-	return SetupRouterWithAnalytics(pool, cfg, nil, analytics...)
+func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
+	r, _ := SetupRouterWithAnalytics(pool, cfg, nil)
+	return r
 }
 
-func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseConn clickhouse.Conn, analytics ...*service.AsyncAuditAnalyticsSink) *gin.Engine {
+// SetupRouterWithAnalytics 装配 HTTP 引擎和后台审计写入器。
+// 调用方必须在进程退出前调用返回 writer 的 Stop，以刷新队列中的剩余日志。
+func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseConn clickhouse.Conn) (*gin.Engine, *service.BatchAuditWriter) {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
@@ -51,18 +54,18 @@ func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseC
 	var auditMetrics repository.AuditMetricsRepository
 	if cfg.ClickHouseAddr != "" {
 		sink, err := repository.NewClickHouseAuditSink(
-			cfg.ClickHouseAddr, cfg.ClickHouseDB, repository.DefaultClickHouseTable,
-			cfg.ClickHouseUser, cfg.ClickHousePass, 5*time.Second)
+			cfg.ClickHouseAddr, cfg.ClickHouseDatabase, repository.DefaultClickHouseTable,
+			cfg.ClickHouseUser, cfg.ClickHousePassword, 5*time.Second)
 		if err != nil {
 			log.Printf("[audit] ClickHouse 分析存储配置无效，本次仅写 PostgreSQL：%v", err)
 		} else {
 			auditWriter.SetSink(sink)
-			log.Printf("[audit] 已启用 ClickHouse 分析存储 %s(%s.%s)", cfg.ClickHouseAddr, cfg.ClickHouseDB, repository.DefaultClickHouseTable)
+			log.Printf("[audit] 已启用 ClickHouse 分析存储 %s(%s.%s)", cfg.ClickHouseAddr, cfg.ClickHouseDatabase, repository.DefaultClickHouseTable)
 		}
 		// 聚合查询比单次写入慢，超时放宽到 10s
 		metricsRepo, err := repository.NewClickHouseMetricsRepository(
-			cfg.ClickHouseAddr, cfg.ClickHouseDB, repository.DefaultClickHouseTable,
-			cfg.ClickHouseUser, cfg.ClickHousePass, 10*time.Second)
+			cfg.ClickHouseAddr, cfg.ClickHouseDatabase, repository.DefaultClickHouseTable,
+			cfg.ClickHouseUser, cfg.ClickHousePassword, 10*time.Second)
 		if err != nil {
 			log.Printf("[metrics] ClickHouse 指标源配置无效，/api/metrics 将使用进程内指标：%v", err)
 		} else {
@@ -75,9 +78,6 @@ func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseC
 	specRepo := repository.NewPostgresOpenAPISpecRepository(pool)
 	// B11：Skills 调用元数据 repository + 导入器
 	skillsSpecRepo := repository.NewPostgresSkillsSpecRepository(pool)
-	if len(analytics) > 0 && analytics[0] != nil {
-		auditService.SetAnalytics(analytics[0])
-	}
 	alertRepo := repository.NewPostgresAlertRepository(pool)
 	var analyticsService *service.AnalyticsService
 	if clickhouseConn != nil {
@@ -197,14 +197,7 @@ func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseC
 	// B14：可观测性统计接口（admin 鉴权）
 	manage.GET("/metrics", metricsHandler.GetMetrics)
 
-	// B14：启动审计批量写入器后台 goroutine，并把 writer 暴露给包级变量，
-	// 供 main.go 在收到退出信号时优雅 Stop（保证残留记录落地）。
-	AuditWriterForShutdown = auditWriter
 	auditWriter.Start()
 
-	return r
+	return r, auditWriter
 }
-
-// AuditWriterForShutdown 暴露 writer 引用供 main.go 在退出时 Stop。
-// 当前简化方案：未来应改为 SetupRouter 返回包含 writer 的 ServiceBundle。
-var AuditWriterForShutdown *service.BatchAuditWriter

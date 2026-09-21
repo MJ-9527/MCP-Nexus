@@ -3,12 +3,18 @@ package config
 import (
 	"context"
 	"fmt"
-	"github.com/ClickHouse/clickhouse-go/v2"
+	"strings"
 	"time"
+
+	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
 func NewClickHouse(ctx context.Context, cfg Config) (clickhouse.Conn, error) {
-	conn, err := clickhouse.Open(&clickhouse.Options{Addr: []string{cfg.ClickHouseAddr}, Protocol: clickhouse.HTTP, Auth: clickhouse.Auth{Database: cfg.ClickHouseDatabase, Username: cfg.ClickHouseUser, Password: cfg.ClickHousePassword}, DialTimeout: 5 * time.Second})
+	addr := strings.TrimPrefix(strings.TrimPrefix(cfg.ClickHouseAddr, "http://"), "https://")
+	if addr == "" {
+		return nil, fmt.Errorf("clickhouse addr is empty")
+	}
+	conn, err := clickhouse.Open(&clickhouse.Options{Addr: []string{addr}, Protocol: clickhouse.HTTP, Auth: clickhouse.Auth{Database: cfg.ClickHouseDatabase, Username: cfg.ClickHouseUser, Password: cfg.ClickHousePassword}, DialTimeout: 5 * time.Second})
 	if err != nil {
 		return nil, err
 	}

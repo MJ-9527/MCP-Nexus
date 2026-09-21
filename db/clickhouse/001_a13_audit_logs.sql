@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS mcp_audit_logs
     duration_ms UInt64,
     denied_reason String,
     reject_reason String,
+    params_summary String,
     params_digest FixedString(64),
     params_sensitive_masked UInt8,
     cost_estimate Float64
@@ -22,3 +23,6 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
 ORDER BY (event_date, created_at, ifNull(tool_id, 0), request_id)
 TTL event_date + INTERVAL 180 DAY;
+
+ALTER TABLE mcp_audit_logs
+    ADD COLUMN IF NOT EXISTS params_summary String AFTER reject_reason;

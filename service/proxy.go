@@ -187,12 +187,12 @@ func (s *ProxyService) recordCallAudit(requestID string, userID int64, role stri
 		toolPtr = &toolID
 	}
 	entry := model.CreateAuditLogRequest{
-		RequestID:    requestID,
-		UserID:       &id,
-		ToolID:       toolPtr,
-		ToolName:     req.ToolName, // 来自请求路径，被拒时同样可定位工具
-		CallerRole:   role,
-		DurationMS:   durationMS,
+		RequestID:  requestID,
+		UserID:     &id,
+		ToolID:     toolPtr,
+		ToolName:   req.ToolName, // 来自请求路径，被拒时同样可定位工具
+		CallerRole: role,
+		DurationMS: durationMS,
 		//DurationMS:   time.Since(startedAt).Milliseconds(),
 		Status:       status,
 		DeniedReason: reason,

@@ -25,7 +25,7 @@ type ClickHouseAuditSink struct {
 
 const (
 	// DefaultClickHouseTable 审计分析表名。
-	DefaultClickHouseTable = "audit_logs"
+	DefaultClickHouseTable = "mcp_audit_logs"
 	// ClickHouseTimeLayout ClickHouse 的规范时间字面量格式（UTC、毫秒精度）。
 	// 显式格式化为该形式，避免依赖 JSON 格式对 ISO8601 的兼容解析。
 	ClickHouseTimeLayout = "2006-01-02 15:04:05.000"

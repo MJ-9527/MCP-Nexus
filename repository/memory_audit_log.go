@@ -92,22 +92,6 @@ func (r *MemoryAuditLogRepository) List(_ context.Context, filter AuditLogFilter
 	}
 	if limit > 0 && limit < len(result) {
 		result = result[:limit]
-	page, pageSize := filter.Page, filter.PageSize
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	offset := (page - 1) * pageSize
-	if offset >= len(result) {
-		result = []*model.AuditLog{}
-	} else {
-		end := offset + pageSize
-		if end > len(result) {
-			end = len(result)
-		}
-		result = result[offset:end]
 	}
 	return result, total, nil
 }
