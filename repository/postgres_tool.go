@@ -75,14 +75,14 @@ func (r *PostgresToolRepository) List(ctx context.Context, filter ToolFilter) ([
 		args = append(args, filter.HealthStatus)
 		conditions = append(conditions, "health_status = $"+strconv.Itoa(len(args)))
 	}
+	whereClause := ""
 	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
+		whereClause = " WHERE " + strings.Join(conditions, " AND ")
+		query += whereClause
 	}
+	// 先按条件统计总数（分页前的 total）
 	var total int64
-	countQuery := "SELECT COUNT(*) FROM mcp_tools"
-	if len(conditions) > 0 {
-		countQuery += " WHERE " + strings.Join(conditions, " AND ")
-	}
+	countQuery := "SELECT COUNT(*) FROM mcp_tools" + whereClause
 	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}

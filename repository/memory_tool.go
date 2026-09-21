@@ -148,6 +148,7 @@ func (r *MemoryToolRepository) UpdatePublished(_ context.Context, id int64, publ
 	return nil
 }
 
+// UpdateSensitivity 更新工具的敏感标记与敏感级别（与 PostgresToolRepository 对齐）。
 func (r *MemoryToolRepository) UpdateSensitivity(_ context.Context, id int64, sensitive bool, level *string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

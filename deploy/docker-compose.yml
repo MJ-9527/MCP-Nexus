@@ -20,26 +20,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # B14：审计分析存储。网关会把同一批审计记录额外投递到这里（分析型查询用）。
+  # 初始化脚本与监听配置分别挂到 initdb 与 config.d，两者都只在首次启动时生效。
   clickhouse:
-    image: clickhouse/clickhouse-server:26.8
+    image: clickhouse/clickhouse-server:24.8-alpine
     container_name: mcp-nexus-clickhouse
     restart: unless-stopped
     environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-mcp_nexus}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-mcp_nexus}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-mcp_analytics}
     ports:
-      - "8123:8123"
-      - "9000:9000"
+      - "8123:8123" # HTTP 接口，网关审计写入走这里
+      - "9000:9000" # 原生协议，供 clickhouse-client / 其他分析工具使用
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ../db/clickhouse:/docker-entrypoint-initdb.d:ro
+      - ../db/clickhouse/config/listen.xml:/etc/clickhouse-server/config.d/listen.xml:ro
+      - ../db/clickhouse/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- --user=$$CLICKHOUSE_USER --password=$$CLICKHOUSE_PASSWORD http://localhost:8123/ping | grep -q Ok"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres_data:

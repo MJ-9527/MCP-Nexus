@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"sync"
+	"time"
 
 	"MCP-Nexus/model"
 )
@@ -23,7 +24,29 @@ func (r *MemoryAuditLogRepository) Create(_ context.Context, log *model.AuditLog
 	defer r.mu.Unlock()
 	r.scope++
 	log.ID = r.scope
+	if log.CreatedAt.IsZero() {
+		log.CreatedAt = time.Now()
+	}
 	r.logs = append(r.logs, log)
+	return nil
+}
+
+// BatchCreate 批量 append，自增 ID 顺序填充（B14）。
+func (r *MemoryAuditLogRepository) BatchCreate(_ context.Context, logs []*model.AuditLog) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		r.scope++
+		log.ID = r.scope
+		if log.CreatedAt.IsZero() {
+			log.CreatedAt = now
+		}
+		r.logs = append(r.logs, log)
+	}
 	return nil
 }
 
@@ -56,6 +79,19 @@ func (r *MemoryAuditLogRepository) List(_ context.Context, filter AuditLogFilter
 		result = append(result, entry)
 	}
 	total := int64(len(result))
+	// 分页：AuditLogFilter 用 Page/PageSize 表示分页，此处转换为 offset/limit。
+	offset := 0
+	if filter.Page > 0 {
+		offset = (filter.Page - 1) * filter.PageSize
+	}
+	limit := filter.PageSize
+	if offset > len(result) {
+		result = nil
+	} else {
+		result = result[offset:]
+	}
+	if limit > 0 && limit < len(result) {
+		result = result[:limit]
 	page, pageSize := filter.Page, filter.PageSize
 	if page <= 0 {
 		page = 1

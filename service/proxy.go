@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"MCP-Nexus/client"
@@ -17,11 +16,16 @@ import (
 const CallTimeout = 10 * time.Second
 
 type ProxyService struct {
-	serverRepo    repository.ServerRepository
-	toolRepo      repository.ToolRepository
-	permissionCli PermissionClient
-	mcpClient     *client.MCPClient
-	audit         *AuditLogService // B8 审计埋点：可 nil（无审计依赖时调用链照常工作）
+	serverRepo       repository.ServerRepository
+	toolRepo         repository.ToolRepository
+	permissionCli    PermissionClient
+	mcpClient        *client.MCPClient
+	audit            *AuditLogService                 // B8 审计埋点：可 nil（无审计依赖时调用链照常工作）
+	specRepo         repository.OpenAPISpecRepository // B10 OpenAPI 翻译元数据（可 nil：无 OpenAPI 工具时走原生路径）
+	translator       *OpenAPITranslator               // B10 OpenAPI 调用翻译器（specRepo 为 nil 时不使用）
+	skillsSpecRepo   repository.SkillsSpecRepository  // B11 Skills 翻译元数据（可 nil：无 Skills 工具时跳过）
+	skillsTranslator *SkillsTranslator                // B11 Skills 调用翻译器（skillsSpecRepo 为 nil 时不使用）
+	metrics          *MetricsCollector                // B14 调用指标采集：可 nil（无指标依赖时跳过采集）
 }
 
 func NewProxyService(serverRepo repository.ServerRepository,
@@ -37,6 +41,45 @@ func NewProxyService(serverRepo repository.ServerRepository,
 
 // SetAudit 注入审计服务（B8）。必须在首次调用前设置。
 func (s *ProxyService) SetAudit(audit *AuditLogService) { s.audit = audit }
+
+// SetMetrics 注入指标采集器（B14）。必须在首次调用前设置。
+func (s *ProxyService) SetMetrics(m *MetricsCollector) { s.metrics = m }
+
+// Metrics 暴露指标采集器（B14），供 handler 层 /api/metrics 查询。
+// 未注入时返回 nil，handler 自行处理空值。
+func (s *ProxyService) Metrics() *MetricsCollector { return s.metrics }
+
+// Breakers 暴露熔断器注册表（B14），供 handler 层 /api/metrics 查询上游状态。
+// mcpClient 未初始化时返回 nil。
+func (s *ProxyService) Breakers() *client.CircuitBreakerRegistry {
+	if s.mcpClient == nil {
+		return nil
+	}
+	return s.mcpClient.Breakers()
+}
+
+// AuditWriter 暴露审计批量写入器（B14），供 handler 层 /api/metrics 查询 writer 状态。
+// audit 未注入或未配置 writer 时返回 nil。
+func (s *ProxyService) AuditWriter() *BatchAuditWriter {
+	if s.audit == nil {
+		return nil
+	}
+	return s.audit.writer
+}
+
+// SetOpenAPIDeps 注入 OpenAPI 翻译依赖（B10）。必须在首次调用前设置。
+// specRepo 为 nil 表示该实例不支持 OpenAPI 工具（遇到 OpenAPI 工具会返回上游错误）。
+func (s *ProxyService) SetOpenAPIDeps(specRepo repository.OpenAPISpecRepository, translator *OpenAPITranslator) {
+	s.specRepo = specRepo
+	s.translator = translator
+}
+
+// SetSkillsDeps 注入 Skills 翻译依赖（B11）。必须在首次调用前设置。
+// specRepo 为 nil 表示该实例不支持 Skills 工具（遇到 Skills 工具会返回上游错误）。
+func (s *ProxyService) SetSkillsDeps(specRepo repository.SkillsSpecRepository, translator *SkillsTranslator) {
+	s.skillsSpecRepo = specRepo
+	s.skillsTranslator = translator
+}
 
 // ListTools 工具发现：仅返回【Server 在线 + 工具已发布 + 有 view/call 权限】的工具（B1/B3/B6）。
 // 权限取 view 与 call 两个 action 的并集：可调用者必然可见，单独授予 view 的账号也可见。
@@ -90,18 +133,43 @@ const (
 	AuditStatusFailed  = "failed"
 )
 
-// CallTool 调用前检查（B3/B6）→ 转发下游（B2）→ 统一业务错误（B4）→ 审计埋点（B8）。
+// CallTool 调用前检查（B3/B6）→ 转发下游（B2）→ 统一业务错误（B4）→ 审计埋点（B8/B14）。
+// B14：审计改为 Submit 异步入队（不阻塞调用链），同时采集调用指标。
 func (s *ProxyService) CallTool(ctx context.Context, role string, userID int64, req *model.McpToolCallRequest, requestID string) (*model.McpToolCallResponse, error) {
 	startedAt := time.Now()
 	var toolID int64
 	resp, err := s.callTool(ctx, role, userID, req, requestID, &toolID)
-	s.recordCallAudit(requestID, role, userID, toolID, startedAt, err, req)
+	durationMS := time.Since(startedAt).Milliseconds()
+	s.recordCallAudit(requestID, userID, role, toolID, durationMS, req, err)
+	s.observeMetrics(req.ToolName, durationMS, err)
 	return resp, err
 }
 
-// recordCallAudit 异步落审计：不阻塞调用链；审计失败仅记日志不影响调用结果（B8）。
-// 完整记录调用者角色（CallerRole）与目标工具名（ToolName），保证审计可追溯。
-func (s *ProxyService) recordCallAudit(requestID, role string, userID int64, toolID int64, startedAt time.Time, err error, req *model.McpToolCallRequest) {
+// observeMetrics 采集调用指标（B14）。metrics 未注入时 no-op，永不阻塞。
+func (s *ProxyService) observeMetrics(toolName string, durationMS int64, err error) {
+	if s.metrics == nil {
+		return
+	}
+	status := AuditStatusSuccess
+	if err != nil {
+		if errors.Is(err, ErrPermissionDenied) {
+			status = AuditStatusDenied
+		} else {
+			status = AuditStatusFailed
+		}
+	}
+	s.metrics.Observe(toolName, durationMS, status)
+}
+
+// recordCallAudit 提交审计（B8/B14）：
+//   - B14 起改为 Submit 异步入队，由 BatchAuditWriter 后台批量落库
+//   - writer 未注入时由 AuditLogService.Submit 内部回退为同步 Create（兼容旧测试）
+//   - 调用链永不阻塞：Submit 内部 select default 路径在队满时直接丢弃并计数
+//
+// 字段补全（B14）：ToolName 与 CallerRole 全部落库。ToolName 直接取自请求，
+// 因此在 RBAC 阶段就被拒绝、拿不到 toolID 的调用也能定位到具体工具，
+// 否则分析存储里只剩 request_id + denied_reason，无法按工具做聚合。
+func (s *ProxyService) recordCallAudit(requestID string, userID int64, role string, toolID int64, durationMS int64, req *model.McpToolCallRequest, err error) {
 	if s.audit == nil || requestID == "" {
 		return
 	}
@@ -122,20 +190,16 @@ func (s *ProxyService) recordCallAudit(requestID, role string, userID int64, too
 		RequestID:    requestID,
 		UserID:       &id,
 		ToolID:       toolPtr,
-		ToolName:     req.ToolName,
+		ToolName:     req.ToolName, // 来自请求路径，被拒时同样可定位工具
 		CallerRole:   role,
-		DurationMS:   time.Since(startedAt).Milliseconds(),
+		DurationMS:   durationMS,
+		//DurationMS:   time.Since(startedAt).Milliseconds(),
 		Status:       status,
 		DeniedReason: reason,
-		Parameters:   req.Arguments, // Record 内部统一脱敏后摘要，原文不落库
+		Parameters:   req.Arguments, // buildAuditLog 内部统一脱敏后摘要，原文不落库
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		if _, auditErr := s.audit.Record(ctx, entry); auditErr != nil {
-			log.Printf("[audit] 落审计失败 request_id=%s status=%s err=%v", requestID, status, auditErr)
-		}
-	}()
+	// B14：异步入队。校验/脱敏/摘要都在 buildAuditLog 内完成，这里无需再启 goroutine。
+	s.audit.Submit(entry)
 }
 
 // callTool 核心调用链，toolID 用于审计记录。
@@ -185,10 +249,49 @@ func (s *ProxyService) callTool(ctx context.Context, role string, userID int64, 
 		return nil, fmt.Errorf("%w: server %s health is %s", ErrServerUnavailable, server.Name, server.HealthStatus)
 	}
 
-	// 5. 整体超时保护 + 转发（响应透传）
+	// 5. B12 参数与版本校验：转发前对入参做前置检查，校验失败立即返回 400 类错误，
+	// 不消耗下游配额也不占用超时预算。校验顺序：先版本（成本低，且参数校验依赖版本
+	// 一致的 schema），后参数。
+	if err := ValidateVersion(tool, req.Arguments); err != nil {
+		return nil, err
+	}
+	if err := ValidateArguments(tool.InputSchema, req.Arguments); err != nil {
+		return nil, err
+	}
+
+	// 6. 整体超时保护
 	callCtx, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
 
+	// B11：先检测 Skills 工具。skillsSpecRepo 命中翻译元数据则走 Skills HTTP 翻译路径
+	// （baseURL 取 spec.Endpoint，空则 fallback server.Endpoint）。
+	// Skills 检测优先于 OpenAPI：Skills 适配任务已经为每个工具准备好独立 endpoint，
+	// 命中即明确按 Skills 路径调用；否则继续 OpenAPI / 原生 MCP 路径。
+	if s.skillsSpecRepo != nil {
+		skillsSpec, err := s.skillsSpecRepo.FindByToolID(callCtx, tool.ID)
+		if err == nil && skillsSpec != nil {
+			return s.callSkillsTool(callCtx, skillsSpec, server, req, requestID)
+		}
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return nil, fmt.Errorf("find skills spec: %w", err)
+		}
+		// ErrNotFound：非 Skills 工具，继续下方 OpenAPI / 原生 MCP 路径
+	}
+
+	// B10：检测 OpenAPI 工具。specRepo 命中翻译元数据则走 HTTP 翻译路径，
+	// 否则按原生 MCP 协议（POST {endpoint}/tools/{name}/call）转发。
+	if s.specRepo != nil {
+		spec, err := s.specRepo.FindByToolID(callCtx, tool.ID)
+		if err == nil && spec != nil {
+			return s.callOpenAPITool(callCtx, spec, server, req, requestID)
+		}
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return nil, fmt.Errorf("find openapi spec: %w", err)
+		}
+		// ErrNotFound：原生 MCP 工具，走下方默认转发路径
+	}
+
+	// 7. 原生 MCP 转发（响应透传）
 	respBody, err := s.mcpClient.PostJSON(callCtx, server.Endpoint, req, map[string]string{
 		"request_id": requestID,
 	})
@@ -203,9 +306,31 @@ func (s *ProxyService) callTool(ctx context.Context, role string, userID int64, 
 	return &callResp, nil
 }
 
+// callOpenAPITool 通过 OpenAPITranslator 将 MCP 调用翻译为实际 HTTP 请求发送到上游 API（B10）。
+// translator 缺失时返回上游错误，避免静默走错路径。
+func (s *ProxyService) callOpenAPITool(ctx context.Context, spec *model.OpenAPISpec, server *model.MCPServer, req *model.McpToolCallRequest, requestID string) (*model.McpToolCallResponse, error) {
+	if s.translator == nil {
+		return nil, fmt.Errorf("%w: openapi translator not configured", ErrUpstreamError)
+	}
+	return s.translator.Translate(ctx, spec, server, req.Arguments, requestID)
+}
+
+// callSkillsTool 通过 SkillsTranslator 将 MCP 调用翻译为实际 HTTP 请求发送到上游 Skills 服务（B11）。
+// translator 缺失时返回上游错误，避免静默走错路径。
+func (s *ProxyService) callSkillsTool(ctx context.Context, spec *model.SkillsSpec, server *model.MCPServer, req *model.McpToolCallRequest, requestID string) (*model.McpToolCallResponse, error) {
+	if s.skillsTranslator == nil {
+		return nil, fmt.Errorf("%w: skills translator not configured", ErrUpstreamError)
+	}
+	return s.skillsTranslator.Translate(ctx, spec, server, req.Arguments, requestID)
+}
+
 // mapUpstreamError 将传输层错误映射为网关业务错误（B4）。
+// B13：熔断开启映射为 ErrServerUnavailable（503 SERVER_UNAVAILABLE），
+// 避免向已熔断上游继续发送请求。
 func mapUpstreamError(err error) error {
 	switch {
+	case errors.Is(err, client.ErrCircuitOpen):
+		return fmt.Errorf("%w: circuit open", ErrServerUnavailable)
 	case errors.Is(err, client.ErrUpstreamTimeout):
 		return fmt.Errorf("%w: %v", ErrUpstreamTimeout, errors.Unwrap(err))
 	case errors.Is(err, client.ErrServerUnreachable):
