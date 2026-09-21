@@ -15,7 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
+func SetupRouter(pool *pgxpool.Pool, cfg config.Config, analytics ...*service.AsyncAuditAnalyticsSink) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
@@ -36,6 +36,9 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	adaptationService := service.NewAdaptationService(adaptationRepo, toolRepo)
 	auditRepo := repository.NewPostgresAuditLogRepository(pool)
 	auditService := service.NewAuditLogService(auditRepo)
+	if len(analytics) > 0 && analytics[0] != nil {
+		auditService.SetAnalytics(analytics[0])
+	}
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)

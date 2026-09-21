@@ -16,11 +16,16 @@ var (
 	ErrInvalidAuditLog = errors.New("invalid audit log")
 )
 
-type AuditLogService struct{ logs repository.AuditLogRepository }
+type AuditLogService struct {
+	logs      repository.AuditLogRepository
+	analytics *AsyncAuditAnalyticsSink
+}
 
 func NewAuditLogService(logs repository.AuditLogRepository) *AuditLogService {
 	return &AuditLogService{logs: logs}
 }
+
+func (s *AuditLogService) SetAnalytics(analytics *AsyncAuditAnalyticsSink) { s.analytics = analytics }
 
 func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRequest) (*model.AuditLog, error) {
 	if s == nil || s.logs == nil || strings.TrimSpace(req.RequestID) == "" || strings.TrimSpace(req.Status) == "" || req.DurationMS < 0 || req.HTTPStatus < 0 || req.CostEstimate < 0 {
@@ -41,6 +46,9 @@ func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRe
 	log := &model.AuditLog{RequestID: strings.TrimSpace(req.RequestID), UserID: req.UserID, ToolID: req.ToolID, ServerID: req.ServerID, ToolName: strings.TrimSpace(req.ToolName), CallerRole: strings.TrimSpace(req.CallerRole), DurationMS: req.DurationMS, Status: status, HTTPStatus: req.HTTPStatus, DeniedReason: strings.TrimSpace(req.DeniedReason), RejectReason: strings.TrimSpace(req.RejectReason), ParamsSummary: summary, ParamsSensitiveMasked: req.Parameters != nil, ParamsDigest: digest, CostEstimate: req.CostEstimate}
 	if err := s.logs.Create(ctx, log); err != nil {
 		return nil, err
+	}
+	if s.analytics != nil {
+		s.analytics.Enqueue(log)
 	}
 	return log, nil
 }

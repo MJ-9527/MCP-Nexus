@@ -10,11 +10,15 @@ import (
 )
 
 type Config struct {
-	Port          string
-	JWTSecret     string
-	JWTTTL        time.Duration
-	RedisAddr     string
-	PublicBaseURL string // 网关对外可达地址（B9 接入配置生成用），空则用请求 Host 推导
+	Port               string
+	JWTSecret          string
+	JWTTTL             time.Duration
+	RedisAddr          string
+	PublicBaseURL      string // 网关对外可达地址（B9 接入配置生成用），空则用请求 Host 推导
+	ClickHouseAddr     string
+	ClickHouseDatabase string
+	ClickHouseUser     string
+	ClickHousePassword string
 }
 
 func Load() Config {
@@ -47,6 +51,18 @@ func Load() Config {
 
 	// 对外可达地址（B9）：供接入配置生成，部署在反代/容器后建议显式设置
 	publicBaseURL := strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
+	clickHouseAddr := os.Getenv("CLICKHOUSE_ADDR")
+	if clickHouseAddr == "" {
+		clickHouseAddr = "localhost:8123"
+	}
+	clickHouseDatabase := os.Getenv("CLICKHOUSE_DATABASE")
+	if clickHouseDatabase == "" {
+		clickHouseDatabase = "default"
+	}
+	clickHouseUser := os.Getenv("CLICKHOUSE_USER")
+	if clickHouseUser == "" {
+		clickHouseUser = "default"
+	}
 
-	return Config{Port: port, JWTSecret: jwtSecret, JWTTTL: jwtTTL, RedisAddr: redisAddr, PublicBaseURL: publicBaseURL}
+	return Config{Port: port, JWTSecret: jwtSecret, JWTTTL: jwtTTL, RedisAddr: redisAddr, PublicBaseURL: publicBaseURL, ClickHouseAddr: clickHouseAddr, ClickHouseDatabase: clickHouseDatabase, ClickHouseUser: clickHouseUser, ClickHousePassword: os.Getenv("CLICKHOUSE_PASSWORD")}
 }
