@@ -39,7 +39,7 @@ func main() {
 		}
 	}
 
-	r := router.SetupRouter(pool, cfg, analytics)
+	r := router.SetupRouterWithAnalytics(pool, cfg, clickhouseConn, analytics)
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)
 	}

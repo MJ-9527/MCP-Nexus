@@ -10,12 +10,17 @@ import (
 	"MCP-Nexus/repository"
 	"MCP-Nexus/service"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
 func SetupRouter(pool *pgxpool.Pool, cfg config.Config, analytics ...*service.AsyncAuditAnalyticsSink) *gin.Engine {
+	return SetupRouterWithAnalytics(pool, cfg, nil, analytics...)
+}
+
+func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseConn clickhouse.Conn, analytics ...*service.AsyncAuditAnalyticsSink) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
@@ -39,6 +44,11 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config, analytics ...*service.As
 	if len(analytics) > 0 && analytics[0] != nil {
 		auditService.SetAnalytics(analytics[0])
 	}
+	alertRepo := repository.NewPostgresAlertRepository(pool)
+	var analyticsService *service.AnalyticsService
+	if clickhouseConn != nil {
+		analyticsService = service.NewAnalyticsService(repository.NewClickHouseAnalyticsRepository(clickhouseConn), alertRepo)
+	}
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
@@ -51,6 +61,10 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config, analytics ...*service.As
 	ratingHandler := handler.NewToolRatingHandler(ratingService)
 	adaptationHandler := handler.NewAdaptationHandler(adaptationService)
 	auditHandler := handler.NewAuditLogHandler(auditService)
+	var analyticsHandler *handler.AnalyticsHandler
+	if analyticsService != nil {
+		analyticsHandler = handler.NewAnalyticsHandler(analyticsService)
+	}
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTTTL)
 	authHandler := handler.NewAuthHandler(authService)
 
@@ -99,6 +113,13 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config, analytics ...*service.As
 	auditLegacy := manage.Group("/audit-logs")
 	auditLegacy.POST("", auditHandler.Create)
 	auditLegacy.GET("", auditHandler.List)
+	if analyticsHandler != nil {
+		analyticsRoutes := manage.Group("/analytics")
+		analyticsRoutes.GET("/overview", analyticsHandler.Overview)
+		analyticsRoutes.GET("/trends", analyticsHandler.Trends)
+		analyticsRoutes.GET("/alerts", analyticsHandler.ListAlerts)
+		analyticsRoutes.POST("/alerts/:id/acknowledge", analyticsHandler.Acknowledge)
+	}
 
 	// MCP 网关代理（B1）：工具发现 + 调用转发，经统一调用链（权限过滤 → 状态检查 → 转发）
 	// B5：/mcp 强制 JWT 认证，角色与用户 ID 由令牌注入，不再信任 X-Role
