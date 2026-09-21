@@ -193,6 +193,7 @@ func (s *ProxyService) recordCallAudit(requestID string, userID int64, role stri
 		ToolName:     req.ToolName, // 来自请求路径，被拒时同样可定位工具
 		CallerRole:   role,
 		DurationMS:   durationMS,
+		//DurationMS:   time.Since(startedAt).Milliseconds(),
 		Status:       status,
 		DeniedReason: reason,
 		Parameters:   req.Arguments, // buildAuditLog 内部统一脱敏后摘要，原文不落库

@@ -85,7 +85,16 @@ func (r *MemoryToolRepository) List(_ context.Context, filter ToolFilter) ([]*mo
 		if filter.Name != "" && !strings.Contains(strings.ToLower(t.Name), strings.ToLower(filter.Name)) {
 			continue
 		}
+		if filter.Keyword != "" {
+			keyword := strings.ToLower(filter.Keyword)
+			if !strings.Contains(strings.ToLower(t.Name), keyword) && !strings.Contains(strings.ToLower(t.Description), keyword) {
+				continue
+			}
+		}
 		if filter.Category != "" && !strings.EqualFold(t.Category, filter.Category) {
+			continue
+		}
+		if len(filter.Tags) > 0 && !containsAllTags(t.Tags, filter.Tags) {
 			continue
 		}
 		if filter.Published != nil && t.Published != *filter.Published {
@@ -97,7 +106,35 @@ func (r *MemoryToolRepository) List(_ context.Context, filter ToolFilter) ([]*mo
 		x := *t
 		matched = append(matched, &x)
 	}
-	return matched, int64(len(matched)), nil
+	total := int64(len(matched))
+	if filter.PageSize > 0 && filter.Page > 0 {
+		offset := (filter.Page - 1) * filter.PageSize
+		if offset >= len(matched) {
+			return []*model.MCPTool{}, total, nil
+		}
+		end := offset + filter.PageSize
+		if end > len(matched) {
+			end = len(matched)
+		}
+		matched = matched[offset:end]
+	}
+	return matched, total, nil
+}
+
+func containsAllTags(actual, expected []string) bool {
+	for _, want := range expected {
+		found := false
+		for _, got := range actual {
+			if strings.EqualFold(got, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *MemoryToolRepository) UpdatePublished(_ context.Context, id int64, published bool) error {

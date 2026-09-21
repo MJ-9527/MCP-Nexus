@@ -179,6 +179,58 @@ type ToolRatingSummary struct {
 	Count   int64   `json:"count"`
 }
 
+type ToolAdaptationTask struct {
+	ID           int64     `json:"id" db:"id"`
+	ToolID       int64     `json:"tool_id" db:"tool_id"`
+	TaskType     string    `json:"task_type" db:"task_type"`
+	Status       string    `json:"status" db:"status"`
+	SourceURL    string    `json:"source_url,omitempty" db:"source_url"`
+	ErrorMessage string    `json:"error_message,omitempty" db:"error_message"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type AnalyticsSummary struct {
+	TotalCalls        int64   `json:"total_calls"`
+	SuccessfulCalls   int64   `json:"successful_calls"`
+	FailedCalls       int64   `json:"failed_calls"`
+	RejectedCalls     int64   `json:"rejected_calls"`
+	SuccessRate       float64 `json:"success_rate"`
+	FailureRate       float64 `json:"failure_rate"`
+	AvgLatencyMS      float64 `json:"avg_latency_ms"`
+	P99LatencyMS      float64 `json:"p99_latency_ms"`
+	TotalCostEstimate float64 `json:"total_cost_estimate"`
+}
+type AnalyticsPoint struct {
+	Time     time.Time `json:"time"`
+	Calls    int64     `json:"calls"`
+	Success  int64     `json:"success"`
+	Failed   int64     `json:"failed"`
+	Rejected int64     `json:"rejected"`
+}
+type ToolAnalyticsRank struct {
+	ToolID      *int64  `json:"tool_id,omitempty"`
+	ToolName    string  `json:"tool_name"`
+	CallCount   int64   `json:"call_count"`
+	SuccessRate float64 `json:"success_rate"`
+}
+type RejectReasonStat struct {
+	Reason string `json:"reason"`
+	Count  int64  `json:"count"`
+}
+type AnomalyAlert struct {
+	ID             int64      `json:"alert_id" db:"id"`
+	AlertType      string     `json:"type" db:"alert_type"`
+	Severity       string     `json:"severity" db:"severity"`
+	ToolID         *int64     `json:"tool_id,omitempty" db:"tool_id"`
+	ToolName       string     `json:"tool_name" db:"tool_name"`
+	Message        string     `json:"message" db:"message"`
+	Status         string     `json:"status" db:"status"`
+	TriggeredAt    time.Time  `json:"triggered_at" db:"triggered_at"`
+	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty" db:"acknowledged_at"`
+	AcknowledgedBy *int64     `json:"acknowledged_by,omitempty" db:"acknowledged_by"`
+}
+
 //网关代理
 
 // McpToolView 返回给前端的工具简略视图

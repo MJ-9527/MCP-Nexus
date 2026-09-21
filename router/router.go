@@ -11,12 +11,17 @@ import (
 	"MCP-Nexus/repository"
 	"MCP-Nexus/service"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
+func SetupRouter(pool *pgxpool.Pool, cfg config.Config, analytics ...*service.AsyncAuditAnalyticsSink) *gin.Engine {
+	return SetupRouterWithAnalytics(pool, cfg, nil, analytics...)
+}
+
+func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseConn clickhouse.Conn, analytics ...*service.AsyncAuditAnalyticsSink) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
 
@@ -31,6 +36,10 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	userRepo := repository.NewPostgresUserRepository(pool)
 	permissionRepo := repository.NewPostgresToolPermissionRepository(pool)
 	permissionService := service.NewToolPermissionService(permissionRepo, toolRepo, userRepo)
+	ratingRepo := repository.NewPostgresToolRatingRepository(pool)
+	ratingService := service.NewToolRatingService(ratingRepo, toolRepo)
+	adaptationRepo := repository.NewPostgresAdaptationTaskRepository(pool)
+	adaptationService := service.NewAdaptationService(adaptationRepo, toolRepo)
 	auditRepo := repository.NewPostgresAuditLogRepository(pool)
 	auditService := service.NewAuditLogService(auditRepo)
 	// B14：审计异步批量写入器（500ms 或 100 条触发 flush）。由调用方（main.go）
@@ -66,6 +75,14 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	specRepo := repository.NewPostgresOpenAPISpecRepository(pool)
 	// B11：Skills 调用元数据 repository + 导入器
 	skillsSpecRepo := repository.NewPostgresSkillsSpecRepository(pool)
+	if len(analytics) > 0 && analytics[0] != nil {
+		auditService.SetAnalytics(analytics[0])
+	}
+	alertRepo := repository.NewPostgresAlertRepository(pool)
+	var analyticsService *service.AnalyticsService
+	if clickhouseConn != nil {
+		analyticsService = service.NewAnalyticsService(repository.NewClickHouseAnalyticsRepository(clickhouseConn), alertRepo)
+	}
 
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
@@ -75,7 +92,13 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	toolQueryHandler := handler.NewToolQueryHandler(toolService)
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)
 	permissionHandler := handler.NewToolPermissionHandler(permissionService)
+	ratingHandler := handler.NewToolRatingHandler(ratingService)
+	adaptationHandler := handler.NewAdaptationHandler(adaptationService)
 	auditHandler := handler.NewAuditLogHandler(auditService)
+	var analyticsHandler *handler.AnalyticsHandler
+	if analyticsService != nil {
+		analyticsHandler = handler.NewAnalyticsHandler(analyticsService)
+	}
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTTTL)
 	authHandler := handler.NewAuthHandler(authService)
 	// B10：OpenAPI 导入器 + handler
@@ -98,7 +121,7 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	servers.GET("", serverQueryHandler.ListServers)
 	servers.GET("/:id", serverQueryHandler.GetServer)
 	manage := protected.Group("")
-	manage.Use(middleware.RequireRole("admin"))
+	manage.Use(middleware.RequireRole(middleware.RoleAdmin))
 	serversManage := manage.Group("/servers")
 	serversManage.POST("", serverRegisterHandler.RegisterServer)
 	serversManage.POST("/:id/activate", serverStatusHandler.ActivateServer)
@@ -110,6 +133,12 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	tools := protected.Group("/tools")
 	tools.GET("", toolQueryHandler.ListTools)
 	tools.GET("/:id", toolQueryHandler.GetTool)
+	tools.GET("/:id/reviews", ratingHandler.List)
+	tools.POST("/:id/reviews", ratingHandler.Create)
+	tools.GET("/:id/adaptation-tasks", adaptationHandler.List)
+	tools.POST("/:id/adaptation-tasks", adaptationHandler.Create)
+	tools.GET("/adaptation-tasks/:task_id", adaptationHandler.Get)
+	tools.PATCH("/adaptation-tasks/:task_id", adaptationHandler.UpdateStatus)
 	toolsManage := manage.Group("/tools")
 	toolsManage.POST("", toolRegisterHandler.RegisterTool)
 	toolsManage.POST("/:id/publish", toolPublishHandler.PublishTool)
@@ -121,16 +150,24 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	permissions.GET("", permissionHandler.ListPermissions)
 	permissions.GET("/check", permissionHandler.CheckPermission)
 
-	auditLogs := manage.Group("/audit-logs")
-	auditLogs.POST("", auditHandler.Create)
-	auditLogs.GET("", auditHandler.List)
-	audit := api.Group("/audit/logs")
+	// 审计日志（B8）：规范路径与旧路径都经过 JWT 和平台管理员鉴权。
+	audit := manage.Group("/audit/logs")
 	audit.POST("", auditHandler.Create)
 	audit.GET("", auditHandler.List)
+	auditLegacy := manage.Group("/audit-logs")
+	auditLegacy.POST("", auditHandler.Create)
+	auditLegacy.GET("", auditHandler.List)
+	if analyticsHandler != nil {
+		analyticsRoutes := manage.Group("/analytics")
+		analyticsRoutes.GET("/overview", analyticsHandler.Overview)
+		analyticsRoutes.GET("/trends", analyticsHandler.Trends)
+		analyticsRoutes.GET("/alerts", analyticsHandler.ListAlerts)
+		analyticsRoutes.POST("/alerts/:id/acknowledge", analyticsHandler.Acknowledge)
+	}
 
 	// MCP 网关代理（B1）：工具发现 + 调用转发，经统一调用链（权限过滤 → 状态检查 → 转发）
 	// B5：/mcp 强制 JWT 认证，角色与用户 ID 由令牌注入，不再信任 X-Role
-	// B7：JWT 之后挂 Redis 令牌桶限流（角色限额 admin 600/dev 300/agent 120 每分钟），Redis 不可用降级放行
+	// B7：JWT 之后挂 Redis 令牌桶限流（platform_admin 600/tool_developer 300/agent_caller 120 每分钟），Redis 不可用降级放行
 	permissionClient := service.NewRolePermissionClient(permissionRepo)
 	proxySvc := service.NewProxyService(serverRepo, toolRepo, permissionClient)
 	proxySvc.SetAudit(auditService)       // B8：调用链审计埋点（B14 起经 Submit 异步入队）

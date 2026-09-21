@@ -54,6 +54,18 @@ func Load() Config {
 
 	// 对外可达地址（B9）：供接入配置生成，部署在反代/容器后建议显式设置
 	publicBaseURL := strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
+	clickHouseAddr := os.Getenv("CLICKHOUSE_ADDR")
+	if clickHouseAddr == "" {
+		clickHouseAddr = "localhost:8123"
+	}
+	clickHouseDatabase := os.Getenv("CLICKHOUSE_DATABASE")
+	if clickHouseDatabase == "" {
+		clickHouseDatabase = "default"
+	}
+	clickHouseUser := os.Getenv("CLICKHOUSE_USER")
+	if clickHouseUser == "" {
+		clickHouseUser = "default"
+	}
 
 	// ClickHouse 审计分析存储（B14）：未配置则审计只落 PostgreSQL
 	chDB := os.Getenv("CLICKHOUSE_DB")

@@ -150,22 +150,26 @@ func (r *PostgresToolRatingRepository) Create(ctx context.Context, rating *model
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresToolRatingRepository) FindByTool(ctx context.Context, toolID int64, limit, offset int) ([]*model.ToolRating, error) {
+func (r *PostgresToolRatingRepository) FindByTool(ctx context.Context, toolID int64, limit, offset int) ([]*model.ToolRating, int64, error) {
+	var total int64
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tool_ratings WHERE tool_id=$1`, toolID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
 	rows, err := r.pool.Query(ctx, `SELECT id,tool_id,user_id,rating,comment,created_at,updated_at FROM tool_ratings
 		WHERE tool_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`, toolID, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	items := make([]*model.ToolRating, 0)
 	for rows.Next() {
 		item := new(model.ToolRating)
 		if err := rows.Scan(&item.ID, &item.ToolID, &item.UserID, &item.Rating, &item.Comment, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, total, rows.Err()
 }
 
 func (r *PostgresToolRatingRepository) AggregateByTool(ctx context.Context, toolID int64) (*model.ToolRatingSummary, error) {

@@ -18,12 +18,12 @@ type Limit struct {
 	Refill   float64
 }
 
-// DefaultRoleLimits 项目约定的角色限额：admin 600/min、developer 300/min、agent 120/min。
+// DefaultRoleLimits 项目约定的角色限额：platform_admin 600/min、tool_developer 300/min、agent_caller 120/min。
 func DefaultRoleLimits() map[string]Limit {
 	return map[string]Limit{
-		"admin":     {Capacity: 600, Refill: 10},
-		"developer": {Capacity: 300, Refill: 5},
-		"agent":     {Capacity: 120, Refill: 2},
+		RoleAdmin:     {Capacity: 600, Refill: 10},
+		RoleDeveloper: {Capacity: 300, Refill: 5},
+		RoleAgent:     {Capacity: 120, Refill: 2},
 	}
 }
 

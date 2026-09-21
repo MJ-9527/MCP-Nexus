@@ -9,7 +9,7 @@ import (
 )
 
 func (s *ToolService) List(ctx context.Context, filter repository.ToolFilter) ([]*model.MCPTool, int64, error) {
-	if s == nil || s.tools == nil {
+	if s == nil || s.tools == nil || filter.Page < 0 || filter.PageSize < 0 || filter.PageSize > 100 {
 		return nil, 0, ErrInvalidTool
 	}
 	return s.tools.List(ctx, filter)
