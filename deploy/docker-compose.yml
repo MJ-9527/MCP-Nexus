@@ -6,7 +6,7 @@ services:
     env_file:
       - ../.env
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../db/migrations:/docker-entrypoint-initdb.d:ro
@@ -20,5 +20,27 @@ services:
       timeout: 3s
       retries: 10
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8
+    container_name: mcp-nexus-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-mcp_nexus}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-mcp_nexus}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ../db/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --user=$$CLICKHOUSE_USER --password=$$CLICKHOUSE_PASSWORD http://localhost:8123/ping | grep -q Ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   postgres_data:
+  clickhouse_data:

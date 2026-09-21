@@ -16,11 +16,16 @@ var (
 	ErrInvalidAuditLog = errors.New("invalid audit log")
 )
 
-type AuditLogService struct{ logs repository.AuditLogRepository }
+type AuditLogService struct {
+	logs      repository.AuditLogRepository
+	analytics *AsyncAuditAnalyticsSink
+}
 
 func NewAuditLogService(logs repository.AuditLogRepository) *AuditLogService {
 	return &AuditLogService{logs: logs}
 }
+
+func (s *AuditLogService) SetAnalytics(analytics *AsyncAuditAnalyticsSink) { s.analytics = analytics }
 
 func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRequest) (*model.AuditLog, error) {
 	if s == nil || s.logs == nil || strings.TrimSpace(req.RequestID) == "" || strings.TrimSpace(req.Status) == "" || req.DurationMS < 0 || req.HTTPStatus < 0 || req.CostEstimate < 0 {
@@ -42,11 +47,14 @@ func (s *AuditLogService) Record(ctx context.Context, req model.CreateAuditLogRe
 	if err := s.logs.Create(ctx, log); err != nil {
 		return nil, err
 	}
+	if s.analytics != nil {
+		s.analytics.Enqueue(log)
+	}
 	return log, nil
 }
 
 func (s *AuditLogService) List(ctx context.Context, filter repository.AuditLogFilter) ([]*model.AuditLog, int64, error) {
-	if s == nil || s.logs == nil || filter.Page < 0 || filter.PageSize < 0 {
+	if s == nil || s.logs == nil || filter.Page < 0 || filter.PageSize < 0 || filter.PageSize > 100 {
 		return nil, 0, ErrInvalidAuditLog
 	}
 	return s.logs.List(ctx, filter)

@@ -21,6 +21,6 @@ type ToolVersionRepository interface {
 
 type ToolRatingRepository interface {
 	Create(ctx context.Context, rating *model.ToolRating) error
-	FindByTool(ctx context.Context, toolID int64, limit, offset int) ([]*model.ToolRating, error)
+	FindByTool(ctx context.Context, toolID int64, limit, offset int) ([]*model.ToolRating, int64, error)
 	AggregateByTool(ctx context.Context, toolID int64) (*model.ToolRatingSummary, error)
 }
