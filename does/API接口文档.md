@@ -529,6 +529,7 @@
     "status": "unpublished",
     "unpublished_at": "2026-09-08T12:00:00Z"
   }
+<<<<<<< HEAD
 
 ### 4.6 工具下线（未发布）
 
@@ -567,6 +568,8 @@
   }
 }
 \\n
+=======
+>>>>>>> origin/pull-request
 }
 \\n
 ### 4.4 评分与评论
@@ -805,6 +808,7 @@ MVP 支持的 OpenAPI 子集：GET、POST 方法；Path/Query/Header/Body 基础
   "message": "权限配置已更新",
   "data": { "tool_id": "tool-mysql-query", "updated_at": "2026-09-08T12:00:00Z" }
 }
+<<<<<<< HEAD
 
 ### 9.4 获取单个 MCP Server 详情
 
@@ -971,6 +975,8 @@ MVP 支持的 OpenAPI 子集：GET、POST 方法；Path/Query/Header/Body 基础
   }
 }
 \\n
+=======
+>>>>>>> origin/pull-request
 \\n
 ---
 
@@ -1152,6 +1158,7 @@ MVP 支持的 OpenAPI 子集：GET、POST 方法；Path/Query/Header/Body 基础
     "page_size": 20
   }
 }
+<<<<<<< HEAD
 
 ### 7.2 创建审计日志
 
@@ -1198,6 +1205,8 @@ MVP 支持的 OpenAPI 子集：GET、POST 方法；Path/Query/Header/Body 基础
   }
 }
 \\n
+=======
+>>>>>>> origin/pull-request
 \\n
 ---
 

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // Package main implements a demo MCP server for testing the gateway.
 // Provides: /health, /tools/query_sales/call, /tools/list_products/call, /tools/delete_customer/call (auth-gated)
 package main
@@ -149,4 +150,74 @@ func main() {
 	log.Printf("  POST %s/tools/list_products/call", addr)
 	log.Printf("  POST %s/tools/delete_customer/call  (需 X-Demo-Auth: demo-secret-token)", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
+=======
+// demo-service 模拟下游 MCP Server：提供 query_sales / query_inventory 两个工具。
+// 网关契约：POST {endpoint}，请求体 {"method":"tools/call","toolName":"...","arguments":{...}}，
+// 响应体 {"content":[{"type":"text","text":"..."}],"is_error":false}。
+package main
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"time"
+
+	"MCP-Nexus/pkg/logutil"
+	"MCP-Nexus/pkg/security"
+	"MCP-Nexus/router"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type callRequest struct {
+	Method    string                 `json:"method"`
+	ToolName  string                 `json:"toolName"`
+	Arguments map[string]interface{} `json:"arguments"`
+}
+
+type contentItem struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type callResponse struct {
+	Content []contentItem `json:"content"`
+	IsError bool          `json:"is_error,omitempty"`
+}
+
+func main() {
+	logger := logutil.SetupLogger(os.Stderr)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8081"
+	}
+
+	// 可选：覆盖敏感工具的 API Key。
+	if k := os.Getenv("API_KEY"); k != "" {
+		security.ServiceAPIKey = k
+	}
+
+	// 可选：配置 DATABASE_URL 后启用数据库类工具。
+	var db *pgxpool.Pool
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		pool, err := pgxpool.New(ctx, dsn)
+		cancel()
+		if err != nil {
+			logger.Error("connect database failed", slog.String("error", err.Error()))
+			panic(err)
+		}
+		db = pool
+		defer db.Close()
+	}
+
+	fileBase := os.Getenv("FILE_BASE_DIR")
+
+	logger.Info("demo-service starting", slog.String("port", port))
+	if err := router.SetupDemoRouter(db, fileBase).Run(":" + port); err != nil {
+		logger.Error("server exited", slog.String("error", err.Error()))
+		return
+	}
+>>>>>>> origin/pull-request
 }

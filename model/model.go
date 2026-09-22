@@ -37,6 +37,42 @@ type ToolPermission struct {
 	Action    string    `json:"action" db:"action"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
+
+type AuditLog struct {
+	ID                    int64     `json:"id" db:"id"`
+	RequestID             string    `json:"request_id" db:"request_id"`
+	UserID                *int64    `json:"user_id,omitempty" db:"user_id"`
+	ToolID                *int64    `json:"tool_id,omitempty" db:"tool_id"`
+	ServerID              *int64    `json:"server_id,omitempty" db:"server_id"`
+	ToolName              string    `json:"tool_name,omitempty" db:"tool_name"`
+	CallerRole            string    `json:"caller_role,omitempty" db:"caller_role"`
+	DurationMS            int64     `json:"duration_ms" db:"duration_ms"`
+	Status                string    `json:"status" db:"status"`
+	HTTPStatus            int       `json:"http_status" db:"http_status"`
+	DeniedReason          string    `json:"denied_reason,omitempty" db:"denied_reason"`
+	RejectReason          string    `json:"reject_reason,omitempty" db:"reject_reason"`
+	ParamsSummary         string    `json:"params_summary,omitempty" db:"params_summary"`
+	ParamsSensitiveMasked bool      `json:"params_sensitive_masked" db:"params_sensitive_masked"`
+	ParamsDigest          string    `json:"params_digest,omitempty" db:"params_digest"`
+	CostEstimate          float64   `json:"cost_estimate" db:"cost_estimate"`
+	CreatedAt             time.Time `json:"created_at" db:"created_at"`
+}
+
+type CreateAuditLogRequest struct {
+	RequestID    string  `json:"request_id" binding:"required"`
+	UserID       *int64  `json:"user_id"`
+	ToolID       *int64  `json:"tool_id"`
+	ServerID     *int64  `json:"server_id"`
+	ToolName     string  `json:"tool_name"`
+	CallerRole   string  `json:"caller_role"`
+	DurationMS   int64   `json:"duration_ms"`
+	Status       string  `json:"status" binding:"required"`
+	HTTPStatus   int     `json:"http_status"`
+	DeniedReason string  `json:"denied_reason"`
+	RejectReason string  `json:"reject_reason"`
+	CostEstimate float64 `json:"cost_estimate"`
+	Parameters   any     `json:"parameters"`
+}
 type MCPServer struct {
 	ID                int64      `json:"id" db:"id"`
 	Name              string     `json:"name" db:"name"`
@@ -58,19 +94,33 @@ type RegisterServerRequest struct {
 	OwnerID     int64  `json:"owner_id"`
 }
 type MCPTool struct {
-	ID           int64           `json:"id" db:"id"`
-	ServerID     int64           `json:"server_id" db:"server_id"`
-	Name         string          `json:"name" db:"name"`
-	Description  string          `json:"description" db:"description"`
-	Category     string          `json:"category" db:"category"`
-	Tags         []string        `json:"tags" db:"tags"`
-	InputSchema  json.RawMessage `json:"input_schema" db:"input_schema"`
-	Version      string          `json:"version" db:"version"`
-	Published    bool            `json:"published" db:"published"`
-	HealthStatus string          `json:"health_status" db:"health_status"`
-	CallCount    int64           `json:"call_count" db:"call_count"`
-	CreatedAt    time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at" db:"updated_at"`
+	ID             int64           `json:"id" db:"id"`
+	ServerID       int64           `json:"server_id" db:"server_id"`
+	CategoryID     *int64          `json:"category_id,omitempty" db:"category_id"`
+	Name           string          `json:"name" db:"name"`
+	Description    string          `json:"description" db:"description"`
+	Category       string          `json:"category" db:"category"`
+	Tags           []string        `json:"tags" db:"tags"`
+	InputSchema    json.RawMessage `json:"input_schema" db:"input_schema"`
+	Version        string          `json:"version" db:"version"`
+	Published      bool            `json:"published" db:"published"`
+	IsSensitive    bool            `json:"is_sensitive" db:"is_sensitive"`
+	SensitiveLevel *string         `json:"sensitive_level,omitempty" db:"sensitive_level"`
+	HealthStatus   string          `json:"health_status" db:"health_status"`
+	CallCount      int64           `json:"call_count" db:"call_count"`
+	AverageRating  float64         `json:"average_rating" db:"average_rating"`
+	RatingCount    int64           `json:"rating_count" db:"rating_count"`
+	CreatedAt      time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at" db:"updated_at"`
+}
+
+type ToolCategory struct {
+	ID          int64     `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	Slug        string    `json:"slug" db:"slug"`
+	Description string    `json:"description" db:"description"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type RegisterToolRequest struct {
@@ -82,6 +132,25 @@ type RegisterToolRequest struct {
 	InputSchema json.RawMessage `json:"input_schema" binding:"required"`
 	Version     string          `json:"version" binding:"required,max=50"`
 }
+
+type GrantToolPermissionRequest struct {
+	UserID *int64  `json:"user_id"`
+	RoleID *int64  `json:"role_id"`
+	Action *string `json:"action"`
+}
+
+type ToolPermissionMatrixItem struct {
+	Role    string `json:"role" binding:"required"`
+	CanRead bool   `json:"can_read"`
+	CanCall bool   `json:"can_call"`
+}
+
+type ConfigureToolPermissionsRequest struct {
+	IsSensitive    bool                       `json:"is_sensitive"`
+	SensitiveLevel *string                    `json:"sensitive_level"`
+	Permissions    []ToolPermissionMatrixItem `json:"permissions" binding:"required"`
+}
+
 type ToolVersion struct {
 	ID          int64           `json:"id" db:"id"`
 	ToolID      int64           `json:"tool_id" db:"tool_id"`
@@ -89,5 +158,149 @@ type ToolVersion struct {
 	InputSchema json.RawMessage `json:"input_schema" db:"input_schema"`
 	Changelog   string          `json:"changelog" db:"changelog"`
 	Status      string          `json:"status" db:"status"`
+	IsCurrent   bool            `json:"is_current" db:"is_current"`
+	ReleasedAt  *time.Time      `json:"released_at,omitempty" db:"released_at"`
 	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at" db:"updated_at"`
 }
+
+type ToolRating struct {
+	ID        int64     `json:"id" db:"id"`
+	ToolID    int64     `json:"tool_id" db:"tool_id"`
+	UserID    int64     `json:"user_id" db:"user_id"`
+	Rating    int       `json:"rating" db:"rating"`
+	Comment   string    `json:"comment" db:"comment"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type ToolRatingSummary struct {
+	Average float64 `json:"average"`
+	Count   int64   `json:"count"`
+}
+
+type ToolAdaptationTask struct {
+	ID           int64     `json:"id" db:"id"`
+	ToolID       int64     `json:"tool_id" db:"tool_id"`
+	TaskType     string    `json:"task_type" db:"task_type"`
+	Status       string    `json:"status" db:"status"`
+	SourceURL    string    `json:"source_url,omitempty" db:"source_url"`
+	ErrorMessage string    `json:"error_message,omitempty" db:"error_message"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type AnalyticsSummary struct {
+	TotalCalls        int64   `json:"total_calls"`
+	SuccessfulCalls   int64   `json:"successful_calls"`
+	FailedCalls       int64   `json:"failed_calls"`
+	RejectedCalls     int64   `json:"rejected_calls"`
+	SuccessRate       float64 `json:"success_rate"`
+	FailureRate       float64 `json:"failure_rate"`
+	AvgLatencyMS      float64 `json:"avg_latency_ms"`
+	P99LatencyMS      float64 `json:"p99_latency_ms"`
+	TotalCostEstimate float64 `json:"total_cost_estimate"`
+}
+type AnalyticsPoint struct {
+	Time     time.Time `json:"time"`
+	Calls    int64     `json:"calls"`
+	Success  int64     `json:"success"`
+	Failed   int64     `json:"failed"`
+	Rejected int64     `json:"rejected"`
+}
+type ToolAnalyticsRank struct {
+	ToolID      *int64  `json:"tool_id,omitempty"`
+	ToolName    string  `json:"tool_name"`
+	CallCount   int64   `json:"call_count"`
+	SuccessRate float64 `json:"success_rate"`
+}
+type RejectReasonStat struct {
+	Reason string `json:"reason"`
+	Count  int64  `json:"count"`
+}
+type AnomalyAlert struct {
+	ID             int64      `json:"alert_id" db:"id"`
+	AlertType      string     `json:"type" db:"alert_type"`
+	Severity       string     `json:"severity" db:"severity"`
+	ToolID         *int64     `json:"tool_id,omitempty" db:"tool_id"`
+	ToolName       string     `json:"tool_name" db:"tool_name"`
+	Message        string     `json:"message" db:"message"`
+	Status         string     `json:"status" db:"status"`
+	TriggeredAt    time.Time  `json:"triggered_at" db:"triggered_at"`
+	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty" db:"acknowledged_at"`
+	AcknowledgedBy *int64     `json:"acknowledged_by,omitempty" db:"acknowledged_by"`
+}
+
+//网关代理
+
+// McpToolView 返回给前端的工具简略视图
+type McpToolView struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// McpListToolsResponse /gateway/tools/list 的返回体
+type McpListToolsResponse struct {
+	Tools []McpToolView `json:"tools"`
+}
+
+// ---- B9 MCP 接入配置生成 ----
+
+// McpConfigResponse 为外部 Agent/IDE 生成的一站式接入配置：
+// 网关地址 + 认证方式 + 操作说明 + 当前账号可调用的工具清单。
+type McpConfigResponse struct {
+	Protocol   string            `json:"protocol"` // 当前网关协议标识（custom-rest）
+	Endpoint   string            `json:"endpoint"` // 网关 MCP 根地址，如 http://host:8080/mcp
+	Auth       McpAuthGuide      `json:"auth"`
+	Operations []McpOperationDoc `json:"operations"`
+	Tools      []McpToolView     `json:"tools"`
+}
+
+// McpAuthGuide 认证接入指引。
+type McpAuthGuide struct {
+	Type       string `json:"type"`        // bearer
+	TokenTTL   string `json:"token_ttl"`   // 令牌有效期，如 24h
+	LoginPath  string `json:"login_path"`  // POST /api/auth/login
+	HeaderName string `json:"header_name"` // Authorization
+	Example    string `json:"example"`     // 登录获取令牌示例
+}
+
+// McpOperationDoc 单个网关操作的调用说明与示例。
+type McpOperationDoc struct {
+	Name            string `json:"name"`
+	Method          string `json:"method"`
+	Path            string `json:"path"`
+	Description     string `json:"description"`
+	RequestExample  string `json:"request_example"`
+	ResponseExample string `json:"response_example"`
+}
+
+// McpToolCallRequest /gateway/tools/call 请求体
+type McpToolCallRequest struct {
+	Method    string                 `json:"method"`
+	ToolName  string                 `json:"toolName"`
+	Arguments map[string]interface{} `json:"arguments"`
+}
+
+// McpToolCallResponse /gateway/tools/call 上游MCP服务返回透传给调用方
+type McpToolCallResponse struct {
+	Content []map[string]interface{} `json:"content"`
+	IsError bool                     `json:"is_error,omitempty"`
+}
+
+// Customer 是 demo-service 查询返回的脱敏客户数据。
+type Customer struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Phone  string `json:"phone"`
+	Email  string `json:"email"`
+	Region string `json:"region"`
+}
+
+const (
+	// DefaultFileBase 是 demo-service read_file 工具默认读取的目录（容器内）。
+	DefaultFileBase = "/app/data"
+	// MaxFetchBodyBytes 限制 demo-service fetch_url 外部响应体大小（1MB）。
+	MaxFetchBodyBytes = int64(1 << 20)
+)

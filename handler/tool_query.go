@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,12 +23,21 @@ func (h *ToolQueryHandler) ListTools(c *gin.Context) {
 		RespondError(c, http.StatusBadRequest, "INVALID_PARAMETER", "工具查询参数无效")
 		return
 	}
-	tools, err := h.service.List(c.Request.Context(), filter)
+	tools, total, err := h.service.List(c.Request.Context(), filter)
 	if err != nil {
 		RespondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "工具查询失败")
 		return
 	}
+<<<<<<< HEAD
 	RespondSuccess(c, gin.H{"items": tools, "total": len(tools)})
+=======
+	respondSuccess(c, gin.H{
+		"items":     tools,
+		"total":     total,
+		"page":      filter.Page,
+		"page_size": filter.PageSize,
+	})
+>>>>>>> origin/pull-request
 }
 
 func (h *ToolQueryHandler) GetTool(c *gin.Context) {
@@ -55,6 +65,7 @@ func (h *ToolQueryHandler) GetTool(c *gin.Context) {
 func parseToolFilter(c *gin.Context) (repository.ToolFilter, error) {
 	filter := repository.ToolFilter{
 		Name:         c.Query("q"),
+<<<<<<< HEAD
 		Category:     c.Query("category"),
 		HealthStatus: c.Query("health_status"),
 	}
@@ -62,8 +73,30 @@ func parseToolFilter(c *gin.Context) (repository.ToolFilter, error) {
 		id, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || id <= 0 {
 			return filter, errors.New("invalid server_id")
+=======
+		Keyword:      c.Query("keyword"),
+		Category:     c.Query("category"),
+		HealthStatus: c.Query("health_status"),
+		Sort:         c.DefaultQuery("sort", "popularity"),
+		Page:         1,
+		PageSize:     20,
+	}
+	if filter.Keyword == "" {
+		filter.Keyword = filter.Name
+	}
+	if value := c.Query("status"); value != "" {
+		filter.Status = value
+		if value == "published" {
+			published := true
+			filter.Published = &published
+>>>>>>> origin/pull-request
 		}
-		filter.ServerID = &id
+	}
+	if value := c.Query("tags"); value != "" {
+		appendToolTags(&filter, value)
+	}
+	if value := c.Query("tag"); value != "" {
+		appendToolTags(&filter, value)
 	}
 	if value, ok := c.GetQuery("published"); ok {
 		published, err := strconv.ParseBool(value)
@@ -72,5 +105,71 @@ func parseToolFilter(c *gin.Context) (repository.ToolFilter, error) {
 		}
 		filter.Published = &published
 	}
+	if value, ok := c.GetQuery("server_id"); ok {
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id <= 0 {
+			return filter, errors.New("invalid server_id")
+		}
+		filter.ServerID = &id
+	}
+	if value, ok := c.GetQuery("page"); ok {
+		page, err := strconv.Atoi(value)
+		if err != nil || page <= 0 {
+			return filter, errors.New("invalid page")
+		}
+		filter.Page = page
+	}
+	if value, ok := c.GetQuery("page_size"); ok {
+		pageSize, err := strconv.Atoi(value)
+		if err != nil || pageSize <= 0 || pageSize > 100 {
+			return filter, errors.New("invalid page_size")
+		}
+		filter.PageSize = pageSize
+	}
+	if !validToolSort(filter.Sort) {
+		return filter, errors.New("invalid sort")
+	}
+	if filter.Status != "" && !validMarketStatus(filter.Status) {
+		return filter, errors.New("invalid status")
+	}
+	if filter.HealthStatus != "" && !validToolHealthStatus(filter.HealthStatus) {
+		return filter, errors.New("invalid health_status")
+	}
 	return filter, nil
+}
+
+func appendToolTags(filter *repository.ToolFilter, value string) {
+	for _, tag := range strings.Split(value, ",") {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			filter.Tags = append(filter.Tags, tag)
+		}
+	}
+}
+
+func validToolSort(sort string) bool {
+	switch sort {
+	case "popularity", "rating", "name", "newest":
+		return true
+	default:
+		return false
+	}
+}
+
+func validMarketStatus(status string) bool {
+	switch status {
+	case "published", "all":
+		return true
+	default:
+		return false
+	}
+}
+
+func validToolHealthStatus(status string) bool {
+	switch status {
+	case "unknown", "online", "degraded", "offline":
+		return true
+	default:
+		return false
+	}
 }
