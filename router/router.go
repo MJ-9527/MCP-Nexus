@@ -1,9 +1,9 @@
 package router
 
 import (
+	"log"
 	"net/http"
 	"os"
-	"log"
 	"time"
 
 	"MCP-Nexus/client"
@@ -68,8 +68,6 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseConn clickhouse.Conn) (*gin.Engine, *service.BatchAuditWriter) {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
-
-	r.GET("/health", handler.Health)
 
 	// Repository → Service → Handler 装配（网关不绕过 Repository，不直接操作数据库）
 	serverRepo := repository.NewPostgresServerRepository(pool)
@@ -178,7 +176,7 @@ func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseC
 	serversManage.POST("", serverRegisterHandler.RegisterServer)
 	serversManage.POST("/:id/activate", serverStatusHandler.ActivateServer)
 	serversManage.POST("/:id/offline", serverStatusHandler.OfflineServer)
-	serversManage.POST("/:id/health-check", serverHealthHandler.CheckServer)
+	serversManage.POST("/:id/health-check", healthCheckHandler.HealthCheck)
 	serversManage.POST("/:id/import-openapi", openapiImportHandler.Import) // B10
 	serversManage.POST("/:id/import-skills", skillsImportHandler.Import)   // B11
 

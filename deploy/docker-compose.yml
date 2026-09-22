@@ -4,7 +4,7 @@ services:
     container_name: mcp-nexus-postgres
     restart: unless-stopped
     env_file:
-      - ../.env.example
+      - ../.env
     ports:
       - "${POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
@@ -61,13 +61,13 @@ services:
 
   demo-service:
     build:
-      context: ../examples/demo-service
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: examples/demo-service/Dockerfile
     ports:
       - "8081:8081"
     environment:
       PORT: "8081"
-      DATABASE_URL: postgres://mcp_user:change-me@postgres:5432/mcp_platform?sslmode=disable
+      DATABASE_URL: postgres://mcp_user:${POSTGRES_PASSWORD:-change-me}@postgres:5432/mcp_platform?sslmode=disable
       # 敏感工具（delete_customer）鉴权用的 API Key
       API_KEY: "demo-api-key"
     depends_on:
@@ -86,8 +86,8 @@ services:
   skills-adapter:
     container_name: demo-skills
     build:
-      context: ../examples/skills/adapter
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: examples/skills/adapter/Dockerfile
     ports:
       - "8082:8082"
     environment:
@@ -118,10 +118,8 @@ services:
       POSTGRES_DB: mcp_platform
       POSTGRES_USER: mcp_user
       POSTGRES_PASSWORD: change-me
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: "8123"
+      REDIS_ADDR: redis:6379
+      CLICKHOUSE_ADDR: clickhouse:8123
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-mcp_nexus}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-mcp_nexus}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-change-me}

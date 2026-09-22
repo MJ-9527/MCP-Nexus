@@ -1,10 +1,14 @@
-# 二进制在宿主机交叉编译（GOOS=linux GOARCH=amd64 CGO_ENABLED=0），此处只打包。
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY examples/skills/adapter ./examples/skills/adapter
+RUN cd examples/skills/adapter && go build -o /out/skills-adapter .
+
 FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates curl jq
 WORKDIR /app
-COPY skills-adapter /app/skills-adapter
-COPY skills.json /app/skills.json
+COPY --from=build /out/skills-adapter /app/skills-adapter
+COPY examples/skills/adapter/skills.json /app/skills.json
 
 EXPOSE 8082
 
