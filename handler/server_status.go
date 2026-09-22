@@ -28,18 +28,18 @@ func (h *ServerStatusHandler) OfflineServer(c *gin.Context) {
 func (h *ServerStatusHandler) setStatus(c *gin.Context, update func(context.Context, int64) error, status string) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
-		RespondError(c, http.StatusBadRequest, "INVALID_PARAMETER", "服务器 ID 无效")
+		respondError(c, http.StatusBadRequest, "服务器 ID 无效")
 		return
 	}
 	if err := update(c.Request.Context(), id); errors.Is(err, repository.ErrNotFound) {
-		RespondError(c, http.StatusNotFound, "SERVER_NOT_FOUND", "MCP Server 不存在")
+		respondError(c, http.StatusNotFound, "MCP Server 不存在")
 		return
 	} else if errors.Is(err, service.ErrInvalidServerStatusTransition) {
-		RespondError(c, http.StatusConflict, "CONFLICT", "不允许的服务器状态转换")
+		respondError(c, http.StatusConflict, "不允许的服务器状态转换")
 		return
 	} else if err != nil {
-		RespondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "更新服务器状态失败")
+		respondError(c, http.StatusInternalServerError, "更新服务器状态失败")
 		return
 	}
-	RespondSuccess(c, gin.H{"id": id, "status": status})
+	respondSuccess(c, gin.H{"id": id, "status": status})
 }

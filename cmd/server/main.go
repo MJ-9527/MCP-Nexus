@@ -13,15 +13,8 @@ import (
 
 	"MCP-Nexus/config"
 	"MCP-Nexus/router"
-<<<<<<< HEAD
-	"context"
-	"log"
-
-	"github.com/gin-gonic/gin"
-=======
 
 	"github.com/ClickHouse/clickhouse-go/v2"
->>>>>>> origin/pull-request
 )
 
 // healthCheckInterval 定时健康检查间隔；可改为 60 * time.Second。
@@ -33,26 +26,10 @@ func main() {
 
 	pool, err := config.NewPostgresPool(ctx)
 	if err != nil {
-		log.Printf("警告: 无法连接 PostgreSQL (%v)，将使用内存存储", err)
-		log.Println("提示: 使用 docker compose up -d 启动完整环境")
-		pool = nil
+		log.Fatal("连接 PostgreSQL 失败：", err)
 	}
+	defer pool.Close()
 
-<<<<<<< HEAD
-	var engine *gin.Engine
-	if pool != nil {
-		engine = router.SetupRouter(pool)
-	} else {
-		engine = router.SetupRouterFallback()
-	}
-
-	log.Printf("网关启动于 :%s", cfg.Port)
-	if err := engine.Run(":" + cfg.Port); err != nil {
-		log.Fatal(err)
-	}
-}
-
-=======
 	var clickhouseConn clickhouse.Conn
 	clickhouseConn, clickhouseErr := config.NewClickHouse(ctx, cfg)
 	if clickhouseErr != nil {
@@ -111,4 +88,3 @@ func executeSchema(ctx context.Context, conn clickhouse.Conn, schema string) err
 	}
 	return nil
 }
->>>>>>> origin/pull-request

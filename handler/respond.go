@@ -1,9 +1,5 @@
 package handler
 
-<<<<<<< HEAD
-// respond.go — common response helpers are in common.go.
-// This file is kept as a placeholder to avoid import issues.
-=======
 import (
 	"MCP-Nexus/model"
 
@@ -63,4 +59,3 @@ func getRequestID(c *gin.Context) string {
 	}
 	return value
 }
->>>>>>> origin/pull-request

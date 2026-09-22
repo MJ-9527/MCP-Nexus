@@ -1,8 +1,5 @@
 package handler
 
-<<<<<<< HEAD
-// health.go — Health handler is defined in common.go.
-=======
 import (
 	"context"
 	"time"
@@ -112,4 +109,3 @@ func Health(c *gin.Context) {
 		"status": "ok",
 	})
 }
->>>>>>> origin/pull-request
