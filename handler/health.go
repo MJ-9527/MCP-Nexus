@@ -1,11 +1,3 @@
 package handler
 
-import (
-	"github.com/gin-gonic/gin"
-)
-
-func Health(c *gin.Context) {
-	respondSuccess(c, gin.H{
-		"status": "ok",
-	})
-}
+// health.go — Health handler is defined in common.go.

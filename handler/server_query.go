@@ -22,10 +22,10 @@ func NewServerQueryHandler(s *service.ServerService) *ServerQueryHandler {
 func (h *ServerQueryHandler) ListServers(c *gin.Context) {
 	servers, err := h.service.List(c.Request.Context())
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "服务器查询失败")
+		RespondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器查询失败")
 		return
 	}
-	respondSuccess(c, gin.H{
+	RespondSuccess(c, gin.H{
 		"items": servers,
 		"total": len(servers),
 	})
@@ -35,20 +35,17 @@ func (h *ServerQueryHandler) GetServer(c *gin.Context) {
 	idText := c.Param("id")
 	id, err := strconv.ParseInt(idText, 10, 64)
 	if err != nil {
-		respondError(c, http.StatusBadRequest, "服务器ID无效")
+		RespondError(c, http.StatusBadRequest, "INVALID_PARAMETER", "服务器ID无效")
 		return
 	}
-	server, err := h.service.GetByID(
-		c.Request.Context(),
-		id,
-	)
+	server, err := h.service.GetByID(c.Request.Context(), id)
 	if errors.Is(err, repository.ErrNotFound) {
-		respondError(c, http.StatusNotFound, "MCP Server 不存在")
+		RespondError(c, http.StatusNotFound, "SERVER_NOT_FOUND", "MCP Server 不存在")
 		return
 	}
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "查询服务器失败")
+		RespondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "查询服务器失败")
 		return
 	}
-	respondSuccess(c, server)
+	RespondSuccess(c, server)
 }

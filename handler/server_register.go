@@ -10,30 +10,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type ServerRegisterHandler struct{ service *service.ServerService }
+type RegisterHandler struct{ service *service.ServerService }
 
-func NewRegisterHandler(s *service.ServerService) *ServerRegisterHandler {
-	return &ServerRegisterHandler{service: s}
+func NewRegisterHandler(s *service.ServerService) *RegisterHandler {
+	return &RegisterHandler{service: s}
 }
 
-func (h *ServerRegisterHandler) RegisterServer(c *gin.Context) {
+func (h *RegisterHandler) RegisterServer(c *gin.Context) {
 	var req model.RegisterServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "请求参数无效")
+		RespondError(c, http.StatusBadRequest, "INVALID_PARAMETER", "请求参数无效")
 		return
 	}
 	server, err := h.service.Register(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidServer) {
-			respondError(c, http.StatusBadRequest, err.Error())
+			RespondError(c, http.StatusBadRequest, "INVALID_PARAMETER", err.Error())
 			return
 		}
 		if errors.Is(err, service.ErrServerExists) {
-			respondError(c, http.StatusConflict, err.Error())
+			RespondError(c, http.StatusConflict, "SERVER_ALREADY_EXISTS", err.Error())
 			return
 		}
-		respondError(c, http.StatusInternalServerError, "服务器注册失败")
+		RespondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器注册失败")
 		return
 	}
-	respondSuccess(c, server)
+	RespondSuccess(c, server)
 }
