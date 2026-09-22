@@ -1,11 +1,15 @@
 module demo-service
 
-go 1.26
+go 1.26.5
 
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.11.0
 )
+
+require MCP-Nexus v0.0.0
+
+replace MCP-Nexus => ../..
 
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect

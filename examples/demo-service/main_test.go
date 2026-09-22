@@ -9,12 +9,14 @@ import (
 	"strings"
 	"testing"
 
+	"MCP-Nexus/router"
+
 	"github.com/gin-gonic/gin"
 )
 
 func newRecorder(method, path, body string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
-	r := setupRouter(nil)
+	r := router.SetupDemoRouter(nil)
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
@@ -26,7 +28,7 @@ func newRecorder(method, path, body string) *httptest.ResponseRecorder {
 
 func newRecorderWithBase(method, path, body, base string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
-	r := setupRouter(nil, base)
+	r := router.SetupDemoRouter(nil, base)
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
@@ -38,7 +40,7 @@ func newRecorderWithBase(method, path, body, base string) *httptest.ResponseReco
 
 func newRecorderWithKey(method, path, body, apiKey string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
-	r := setupRouter(nil)
+	r := router.SetupDemoRouter(nil)
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")

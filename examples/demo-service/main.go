@@ -6,17 +6,15 @@ import (
 	"os"
 	"time"
 
+	"MCP-Nexus/pkg/logutil"
+	"MCP-Nexus/pkg/security"
+	"MCP-Nexus/router"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var (
-	logger  *slog.Logger
-	metrics *serviceMetrics
-)
-
 func main() {
-	logger = setupLogger(os.Stderr)
-	metrics = newServiceMetrics()
+	logger := logutil.SetupLogger(os.Stderr)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -25,7 +23,7 @@ func main() {
 
 	// 可选：覆盖敏感工具的 API Key。
 	if k := os.Getenv("API_KEY"); k != "" {
-		serviceAPIKey = k
+		security.ServiceAPIKey = k
 	}
 
 	// 可选：配置 DATABASE_URL 后启用数据库类工具。
@@ -45,7 +43,7 @@ func main() {
 	fileBase := os.Getenv("FILE_BASE_DIR")
 
 	logger.Info("demo-service starting", slog.String("port", port))
-	if err := setupRouter(db, fileBase).Run(":" + port); err != nil {
+	if err := router.SetupDemoRouter(db, fileBase).Run(":" + port); err != nil {
 		logger.Error("server exited", slog.String("error", err.Error()))
 		panic(err)
 	}

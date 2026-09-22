@@ -1,7 +1,7 @@
-package main
+package metrics
 
-// serviceMetrics 是 demo-service 在内存中的基础指标。
-type serviceMetrics struct {
+// ServiceMetrics 是 demo-service 在内存中的基础指标。
+type ServiceMetrics struct {
 	RequestsTotal    int64            `json:"requests_total"`
 	RequestsByStatus map[int]int64    `json:"requests_by_status"`
 	ToolCallsTotal   int64            `json:"tool_calls_total"`
@@ -10,15 +10,17 @@ type serviceMetrics struct {
 	ErrorDetails     map[string]int64 `json:"error_details"`
 }
 
-func newServiceMetrics() *serviceMetrics {
-	return &serviceMetrics{
+// New 初始化 ServiceMetrics。
+func New() *ServiceMetrics {
+	return &ServiceMetrics{
 		RequestsByStatus: make(map[int]int64),
 		ToolCallsByName:  make(map[string]int64),
 		ErrorDetails:     make(map[string]int64),
 	}
 }
 
-func (m *serviceMetrics) recordRequest(status int) {
+// RecordRequest 记录一次 HTTP 请求指标。
+func (m *ServiceMetrics) RecordRequest(status int) {
 	m.RequestsTotal++
 	m.RequestsByStatus[status]++
 	if status >= 400 {
@@ -26,12 +28,14 @@ func (m *serviceMetrics) recordRequest(status int) {
 	}
 }
 
-func (m *serviceMetrics) recordTool(tool string) {
+// RecordTool 记录一次工具调用。
+func (m *ServiceMetrics) RecordTool(tool string) {
 	m.ToolCallsTotal++
 	m.ToolCallsByName[tool]++
 }
 
-func (m *serviceMetrics) recordError(label string) {
+// RecordError 记录一次错误分类。
+func (m *ServiceMetrics) RecordError(label string) {
 	m.ErrorsTotal++
 	m.ErrorDetails[label]++
 }

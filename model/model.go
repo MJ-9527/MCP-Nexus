@@ -91,3 +91,19 @@ type ToolVersion struct {
 	Status      string          `json:"status" db:"status"`
 	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
 }
+
+// Customer 是 demo-service 查询返回的脱敏客户数据。
+type Customer struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Phone  string `json:"phone"`
+	Email  string `json:"email"`
+	Region string `json:"region"`
+}
+
+const (
+	// DefaultFileBase 是 demo-service read_file 工具默认读取的目录（容器内）。
+	DefaultFileBase = "/app/data"
+	// MaxFetchBodyBytes 限制 demo-service fetch_url 外部响应体大小（1MB）。
+	MaxFetchBodyBytes = int64(1 << 20)
+)
