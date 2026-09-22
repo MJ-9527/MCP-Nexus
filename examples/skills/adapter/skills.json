@@ -1,0 +1,50 @@
+{
+  "name": "demo-skills",
+  "version": "1.0.0",
+  "description": "演示用 Skills 工具包，可被 MCP 网关识别和调用。",
+  "endpoint": "http://demo-skills:8082",
+  "tools": [
+    {
+      "name": "calculate_vat",
+      "description": "计算商品含税总价",
+      "category": "finance",
+      "tags": ["finance", "tax"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "number", "description": "不含税金额" },
+          "rate": { "type": "number", "description": "税率，例如 0.13", "default": 0.13 }
+        },
+        "required": ["amount"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "number" },
+          "tax": { "type": "number" },
+          "total": { "type": "number" }
+        }
+      }
+    },
+    {
+      "name": "format_phone",
+      "description": "将手机号格式化为 3-4-4 分段",
+      "category": "utils",
+      "tags": ["utils", "format"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string", "description": "11位手机号" }
+        },
+        "required": ["phone"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string" },
+          "formatted": { "type": "string" }
+        }
+      }
+    }
+  ]
+}

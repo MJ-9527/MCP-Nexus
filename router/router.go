@@ -1,6 +1,8 @@
 package router
 
 import (
+	"net/http"
+	"os"
 	"log"
 	"time"
 
@@ -8,6 +10,9 @@ import (
 	"MCP-Nexus/config"
 	"MCP-Nexus/handler"
 	"MCP-Nexus/middleware"
+	"MCP-Nexus/model"
+	"MCP-Nexus/pkg/logutil"
+	"MCP-Nexus/pkg/metrics"
 	"MCP-Nexus/repository"
 	"MCP-Nexus/service"
 
@@ -16,6 +21,42 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
+
+func SetupDemoRouter(db *pgxpool.Pool, fileBase ...string) *gin.Engine {
+	logger := logutil.SetupLogger(os.Stderr)
+	m := metrics.New()
+
+	base := model.DefaultFileBase
+	if len(fileBase) > 0 && fileBase[0] != "" {
+		base = fileBase[0]
+	}
+
+	r := gin.New()
+	r.Use(middleware.DemoRequestID())
+	r.Use(middleware.DemoLogger(logger, m))
+	r.Use(gin.Recovery())
+
+	demoHandlers := handler.NewDemoHandlers(logger, m, db, base)
+
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"service": "demo-service",
+			"time":    time.Now().Format(time.RFC3339),
+			"health":  true,
+		})
+	})
+	r.POST("/tools/query_sales/call", demoHandlers.QuerySales)
+	r.POST("/tools/query_customer/call", demoHandlers.QueryCustomer)
+	r.POST("/tools/read_file/call", demoHandlers.ReadFile)
+	r.POST("/tools/fetch_url/call", demoHandlers.FetchURL)
+	r.POST("/tools/delete_customer/call", middleware.DemoAPIKeyAuth(logger, m), demoHandlers.DeleteCustomer)
+	r.GET("/metrics", func(c *gin.Context) {
+		c.JSON(http.StatusOK, m)
+	})
+
+	return r
+}
 
 func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 	r, _ := SetupRouterWithAnalytics(pool, cfg, nil)
@@ -32,8 +73,15 @@ func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseC
 
 	// Repository → Service → Handler 装配（网关不绕过 Repository，不直接操作数据库）
 	serverRepo := repository.NewPostgresServerRepository(pool)
+
+	healthClient := client.NewHealthClient(5 * time.Second)
+	healthHandler := handler.NewHealthHandler(pool, healthClient, []handler.DownstreamService{
+		{Name: "demo-service", Endpoint: "http://demo-service:8081"},
+		{Name: "skills-adapter", Endpoint: "http://demo-skills:8082"},
+	})
+	r.GET("/health", healthHandler.Health)
+
 	serverService := service.NewServerService(serverRepo)
-	serverHealthService := service.NewServerHealthService(serverRepo, client.NewHealthClient(5*time.Second))
 	toolRepo := repository.NewPostgresToolRepository(pool)
 	toolService := service.NewToolService(toolRepo, serverRepo)
 	userRepo := repository.NewPostgresUserRepository(pool)
@@ -87,7 +135,11 @@ func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseC
 	serverRegisterHandler := handler.NewRegisterHandler(serverService)
 	serverQueryHandler := handler.NewServerQueryHandler(serverService)
 	serverStatusHandler := handler.NewServerStatusHandler(serverService)
-	serverHealthHandler := handler.NewServerHealthHandler(serverHealthService)
+
+	// 健康检查：探测 + 后台定时检查；持久化走 ServerRepository.UpdateHealth。
+	healthCheckService := service.NewHealthCheckService(serverRepo, healthClient)
+	healthCheckHandler := handler.NewHealthCheckHandler(healthCheckService)
+
 	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
 	toolQueryHandler := handler.NewToolQueryHandler(toolService)
 	toolPublishHandler := handler.NewToolPublishHandler(toolService)

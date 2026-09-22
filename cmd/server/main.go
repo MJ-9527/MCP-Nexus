@@ -17,6 +17,9 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
+// healthCheckInterval 定时健康检查间隔；可改为 60 * time.Second。
+const healthCheckInterval = 30 * time.Second
+
 func main() {
 	cfg := config.Load()
 	ctx := context.Background()

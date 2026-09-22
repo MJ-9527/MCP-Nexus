@@ -4,7 +4,7 @@ services:
     container_name: mcp-nexus-postgres
     restart: unless-stopped
     env_file:
-      - ../.env
+      - ../.env.example
     ports:
       - "${POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
@@ -20,8 +20,22 @@ services:
       timeout: 3s
       retries: 10
 
-  # B14：审计分析存储。网关会把同一批审计记录额外投递到这里（分析型查询用）。
-  # 初始化脚本与监听配置分别挂到 initdb 与 config.d，两者都只在首次启动时生效。
+  redis:
+    image: redis:7-alpine
+    container_name: mcp-nexus-redis
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # B14：审计分析存储。网关会把同一批审计记录额外投递到这里。
+  # 初始化脚本与监听配置分别挂到 initdb 与 config.d，首次启动生效。
   clickhouse:
     image: clickhouse/clickhouse-server:24.8-alpine
     container_name: mcp-nexus-clickhouse
@@ -32,8 +46,8 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-change-me}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
-      - "8123:8123" # HTTP 接口，网关审计写入走这里
-      - "9000:9000" # 原生协议，供 clickhouse-client / 其他分析工具使用
+      - "8123:8123"   # HTTP，网关审计写入
+      - "9000:9000"   # 原生协议
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ../db/clickhouse/config/listen.xml:/etc/clickhouse-server/config.d/listen.xml:ro
@@ -43,7 +57,96 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 20s
+
+  demo-service:
+    build:
+      context: ../examples/demo-service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: "8081"
+      DATABASE_URL: postgres://mcp_user:change-me@postgres:5432/mcp_platform?sslmode=disable
+      # 敏感工具（delete_customer）鉴权用的 API Key
+      API_KEY: "demo-api-key"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f -s http://localhost:8081/health | jq -r .status"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  skills-adapter:
+    container_name: demo-skills
+    build:
+      context: ../examples/skills/adapter
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      PORT: "8082"
+    depends_on:
+      demo-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f -s http://localhost:8082/health | jq -r .status"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: cmd/server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mcp_platform
+      POSTGRES_USER: mcp_user
+      POSTGRES_PASSWORD: change-me
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-mcp_nexus}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-mcp_nexus}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      demo-service:
+        condition: service_healthy
+      skills-adapter:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f -s http://localhost:8080/health | jq -r '.data.status'"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 15
 
 volumes:
   postgres_data:
+  redis_data:
   clickhouse_data:

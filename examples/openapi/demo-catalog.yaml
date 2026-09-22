@@ -1,0 +1,162 @@
+# ============================================================================
+# demo-catalog.yaml — OpenAPI 3.x 示例（成员 C / C9）
+#
+# 目的：作为 OpenAPI → MCP 生成器的输入样例，覆盖 MVP 限定的子集：
+#   - 方法：GET、POST
+#   - 参数：Path、Query、Header、Body
+#   - 鉴权：API Key（Header）、Bearer Token
+#   - 响应：基础 Schema（components/schemas）
+#
+# 生成器（cmd/openapi-gen）将把每个 operation 生成一个 MCP 工具骨架。
+# ============================================================================
+openapi: 3.0.3
+info:
+  title: Demo Catalog API
+  description: 演示用商品/订单目录 API，用于验证 OpenAPI → MCP 生成器。
+  version: 1.0.0
+servers:
+  - url: https://api.example.com/v1
+    description: 生产环境
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /products:
+    get:
+      operationId: listProducts
+      summary: 分页查询商品列表
+      description: 按分类与分页参数查询商品，需要 API Key。
+      parameters:
+        - name: category
+          in: query
+          required: false
+          description: 按分类过滤
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: 每页数量
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: 偏移量
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: 商品列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Product"
+                  total:
+                    type: integer
+
+  /products/{id}:
+    get:
+      operationId: getProduct
+      summary: 按 ID 查询商品详情
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 商品 ID
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 商品详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: 商品不存在
+
+  /orders:
+    post:
+      operationId: createOrder
+      summary: 创建订单
+      description: 创建订单，需要 Bearer Token，并要求幂等键 Header。
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 幂等键，防止重复下单
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderRequest"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Product:
+      type: object
+      required: [id, name, price]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        category:
+          type: string
+    OrderRequest:
+      type: object
+      required: [product_id, quantity]
+      properties:
+        product_id:
+          type: string
+        quantity:
+          type: integer
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+        product_id:
+          type: string
+        quantity:
+          type: integer
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
