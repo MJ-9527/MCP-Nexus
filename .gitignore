@@ -6,3 +6,5 @@ coverage.out
 examples/demo-service/demo-service
 examples/skills/adapter/skills-adapter
 cmd/server/server
+web/node_modules/
+web/dist/
