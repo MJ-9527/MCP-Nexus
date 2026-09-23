@@ -1,0 +1,49 @@
+2026/09/23 11:07:45 ClickHouse 已连接：localhost:18123/mcp_nexus
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /health                   --> MCP-Nexus/handler.(*HealthHandler).Health-fm (5 handlers)
+2026/09/23 11:07:45 [audit] 已启用 ClickHouse 分析存储 localhost:18123(mcp_nexus.mcp_audit_logs)
+2026/09/23 11:07:45 [metrics] /api/metrics 指标来源：ClickHouse 聚合
+[GIN-debug] POST   /api/auth/login           --> MCP-Nexus/handler.(*AuthHandler).Login-fm (5 handlers)
+[GIN-debug] GET    /api/auth/me              --> MCP-Nexus/handler.(*AuthHandler).Me-fm (6 handlers)
+[GIN-debug] GET    /api/servers              --> MCP-Nexus/handler.(*ServerQueryHandler).ListServers-fm (6 handlers)
+[GIN-debug] GET    /api/servers/:id          --> MCP-Nexus/handler.(*ServerQueryHandler).GetServer-fm (6 handlers)
+[GIN-debug] POST   /api/servers              --> MCP-Nexus/handler.(*ServerRegisterHandler).RegisterServer-fm (7 handlers)
+[GIN-debug] POST   /api/servers/:id/activate --> MCP-Nexus/handler.(*ServerStatusHandler).ActivateServer-fm (7 handlers)
+[GIN-debug] POST   /api/servers/:id/offline  --> MCP-Nexus/handler.(*ServerStatusHandler).OfflineServer-fm (7 handlers)
+[GIN-debug] POST   /api/servers/:id/health-check --> MCP-Nexus/handler.(*HealthCheckHandler).HealthCheck-fm (7 handlers)
+[GIN-debug] POST   /api/servers/:id/import-openapi --> MCP-Nexus/handler.(*OpenAPIImportHandler).Import-fm (7 handlers)
+[GIN-debug] POST   /api/servers/:id/import-skills --> MCP-Nexus/handler.(*SkillsImportHandler).Import-fm (7 handlers)
+[GIN-debug] GET    /api/tools                --> MCP-Nexus/handler.(*ToolQueryHandler).ListTools-fm (6 handlers)
+[GIN-debug] GET    /api/tools/:id            --> MCP-Nexus/handler.(*ToolQueryHandler).GetTool-fm (6 handlers)
+[GIN-debug] GET    /api/tools/:id/reviews    --> MCP-Nexus/handler.(*ToolRatingHandler).List-fm (6 handlers)
+[GIN-debug] POST   /api/tools/:id/reviews    --> MCP-Nexus/handler.(*ToolRatingHandler).Create-fm (6 handlers)
+[GIN-debug] GET    /api/tools/:id/adaptation-tasks --> MCP-Nexus/handler.(*AdaptationHandler).List-fm (6 handlers)
+[GIN-debug] POST   /api/tools/:id/adaptation-tasks --> MCP-Nexus/handler.(*AdaptationHandler).Create-fm (6 handlers)
+[GIN-debug] GET    /api/tools/adaptation-tasks/:task_id --> MCP-Nexus/handler.(*AdaptationHandler).Get-fm (6 handlers)
+[GIN-debug] PATCH  /api/tools/adaptation-tasks/:task_id --> MCP-Nexus/handler.(*AdaptationHandler).UpdateStatus-fm (6 handlers)
+[GIN-debug] POST   /api/tools                --> MCP-Nexus/handler.(*ToolRegisterHandler).RegisterTool-fm (7 handlers)
+[GIN-debug] POST   /api/tools/:id/publish    --> MCP-Nexus/handler.(*ToolPublishHandler).PublishTool-fm (7 handlers)
+[GIN-debug] POST   /api/tools/:id/offline    --> MCP-Nexus/handler.(*ToolPublishHandler).OfflineTool-fm (7 handlers)
+[GIN-debug] POST   /api/tools/:id/permissions --> MCP-Nexus/handler.(*ToolPermissionHandler).GrantPermission-fm (7 handlers)
+[GIN-debug] DELETE /api/tools/:id/permissions --> MCP-Nexus/handler.(*ToolPermissionHandler).RevokePermission-fm (7 handlers)
+[GIN-debug] GET    /api/tools/:id/permissions --> MCP-Nexus/handler.(*ToolPermissionHandler).ListPermissions-fm (7 handlers)
+[GIN-debug] GET    /api/tools/:id/permissions/check --> MCP-Nexus/handler.(*ToolPermissionHandler).CheckPermission-fm (7 handlers)
+[GIN-debug] POST   /api/audit/logs           --> MCP-Nexus/handler.(*AuditLogHandler).Create-fm (7 handlers)
+[GIN-debug] GET    /api/audit/logs           --> MCP-Nexus/handler.(*AuditLogHandler).List-fm (7 handlers)
+[GIN-debug] POST   /api/audit-logs           --> MCP-Nexus/handler.(*AuditLogHandler).Create-fm (7 handlers)
+[GIN-debug] GET    /api/audit-logs           --> MCP-Nexus/handler.(*AuditLogHandler).List-fm (7 handlers)
+[GIN-debug] GET    /api/analytics/overview   --> MCP-Nexus/handler.(*AnalyticsHandler).Overview-fm (7 handlers)
+[GIN-debug] GET    /api/analytics/trends     --> MCP-Nexus/handler.(*AnalyticsHandler).Trends-fm (7 handlers)
+[GIN-debug] GET    /api/analytics/alerts     --> MCP-Nexus/handler.(*AnalyticsHandler).ListAlerts-fm (7 handlers)
+[GIN-debug] POST   /api/analytics/alerts/:id/acknowledge --> MCP-Nexus/handler.(*AnalyticsHandler).Acknowledge-fm (7 handlers)
+[GIN-debug] GET    /mcp/tools                --> MCP-Nexus/handler.(*ProxyHandler).ListTools-fm (7 handlers)
+[GIN-debug] POST   /mcp/tools/:toolName/call --> MCP-Nexus/handler.(*ProxyHandler).CallTool-fm (7 handlers)
+[GIN-debug] GET    /api/mcp-config           --> MCP-Nexus/handler.(*McpConfigHandler).GetMcpConfig-fm (6 handlers)
+[GIN-debug] GET    /api/metrics              --> MCP-Nexus/handler.(*MetricsHandler).GetMetrics-fm (7 handlers)
+2026/09/23 11:07:45 服务已启动，监听 :8080
+2026/09/23 11:07:45 HTTP 服务异常退出：listen tcp :8080: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.

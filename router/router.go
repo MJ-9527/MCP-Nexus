@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -68,6 +69,8 @@ func SetupRouter(pool *pgxpool.Pool, cfg config.Config) *gin.Engine {
 func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseConn clickhouse.Conn) (*gin.Engine, *service.BatchAuditWriter) {
 	r := gin.Default()
 	r.Use(middleware.RequestID())
+	// 允许本地前端开发服务器（Vite 5173 等）跨域访问；OPTIONS 预检直接返回 204。
+	r.Use(middleware.CORS())
 
 	// Repository → Service → Handler 装配（网关不绕过 Repository，不直接操作数据库）
 	serverRepo := repository.NewPostgresServerRepository(pool)
@@ -137,6 +140,9 @@ func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseC
 	// 健康检查：探测 + 后台定时检查；持久化走 ServerRepository.UpdateHealth。
 	healthCheckService := service.NewHealthCheckService(serverRepo, healthClient)
 	healthCheckHandler := handler.NewHealthCheckHandler(healthCheckService)
+	// 网关启动后立即探测一次，并持续刷新服务健康状态。Docker 内的工具发现和调用
+	// 依赖该状态，不能只依靠管理员手工点击健康检查。
+	healthCheckService.StartBackground(context.Background(), 30*time.Second, log.Printf)
 
 	toolRegisterHandler := handler.NewToolRegisterHandler(toolService)
 	toolQueryHandler := handler.NewToolQueryHandler(toolService)
@@ -162,6 +168,11 @@ func SetupRouterWithAnalytics(pool *pgxpool.Pool, cfg config.Config, clickhouseC
 
 	api := r.Group("/api")
 	api.POST("/auth/login", authHandler.Login)
+
+	// D5/D6：前端登录态恢复用的当前用户接口（JWT 保护）
+	protectedMe := api.Group("/auth")
+	protectedMe.Use(middleware.JWTAuth(cfg.JWTSecret))
+	protectedMe.GET("/me", authHandler.Me)
 
 	// B6：/api 管理面强制 JWT 认证；管理写操作仅限 admin 角色
 	protected := api.Group("")

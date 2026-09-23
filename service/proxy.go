@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"MCP-Nexus/client"
@@ -85,13 +86,15 @@ func (s *ProxyService) SetSkillsDeps(specRepo repository.SkillsSpecRepository, t
 // 权限取 view 与 call 两个 action 的并集：可调用者必然可见，单独授予 view 的账号也可见。
 func (s *ProxyService) ListTools(ctx context.Context, role string, userID int64) (*model.McpListToolsResponse, error) {
 	allowed := make(map[string]bool)
-	for _, action := range []string{PermissionActionView, PermissionActionCall} {
-		allowedToolNames, err := s.permissionCli.GetAllowedToolNames(ctx, role, userID, action)
-		if err != nil {
-			return nil, fmt.Errorf("query permission error: %w", err)
-		}
-		for _, name := range allowedToolNames {
-			allowed[name] = true
+	if role != "platform_admin" {
+		for _, action := range []string{PermissionActionView, PermissionActionCall} {
+			allowedToolNames, err := s.permissionCli.GetAllowedToolNames(ctx, role, userID, action)
+			if err != nil {
+				return nil, fmt.Errorf("query permission error: %w", err)
+			}
+			for _, name := range allowedToolNames {
+				allowed[name] = true
+			}
 		}
 	}
 
@@ -115,7 +118,7 @@ func (s *ProxyService) ListTools(ctx context.Context, role string, userID int64)
 
 	viewList := make([]model.McpToolView, 0)
 	for _, t := range tools {
-		if onlineServerIDs[t.ServerID] && allowed[t.Name] {
+		if onlineServerIDs[t.ServerID] && (role == "platform_admin" || allowed[t.Name]) {
 			viewList = append(viewList, model.McpToolView{
 				Name:        t.Name,
 				Description: t.Description,
@@ -205,15 +208,17 @@ func (s *ProxyService) recordCallAudit(requestID string, userID int64, role stri
 // callTool 核心调用链，toolID 用于审计记录。
 func (s *ProxyService) callTool(ctx context.Context, role string, userID int64, req *model.McpToolCallRequest, requestID string, toolID *int64) (*model.McpToolCallResponse, error) {
 	// 1. RBAC：角色授权或用户直授是否有权调用该工具（action=call）
-	allowedToolNames, err := s.permissionCli.GetAllowedToolNames(ctx, role, userID, PermissionActionCall)
-	if err != nil {
-		return nil, fmt.Errorf("query permission error: %w", err)
-	}
-	hasPermission := false
-	for _, name := range allowedToolNames {
-		if name == req.ToolName {
-			hasPermission = true
-			break
+	hasPermission := role == "platform_admin"
+	if !hasPermission {
+		allowedToolNames, err := s.permissionCli.GetAllowedToolNames(ctx, role, userID, PermissionActionCall)
+		if err != nil {
+			return nil, fmt.Errorf("query permission error: %w", err)
+		}
+		for _, name := range allowedToolNames {
+			if name == req.ToolName {
+				hasPermission = true
+				break
+			}
 		}
 	}
 	if !hasPermission {
@@ -292,7 +297,8 @@ func (s *ProxyService) callTool(ctx context.Context, role string, userID int64, 
 	}
 
 	// 7. 原生 MCP 转发（响应透传）
-	respBody, err := s.mcpClient.PostJSON(callCtx, server.Endpoint, req, map[string]string{
+	callURL := strings.TrimRight(server.Endpoint, "/") + "/tools/" + req.ToolName + "/call"
+	respBody, err := s.mcpClient.PostJSON(callCtx, callURL, req.Arguments, map[string]string{
 		"request_id": requestID,
 	})
 	if err != nil {
@@ -302,6 +308,15 @@ func (s *ProxyService) callTool(ctx context.Context, role string, userID int64, 
 	var callResp model.McpToolCallResponse
 	if err := json.Unmarshal(respBody, &callResp); err != nil {
 		return nil, fmt.Errorf("%w: parse upstream response: %v", ErrUpstreamError, err)
+	}
+	// 原生演示服务也允许直接返回业务 JSON。统一包装为 MCP content，避免前端
+	// 得到空结果；已经返回标准 content 的 MCP Server 保持原样透传。
+	if len(callResp.Content) == 0 {
+		var value any
+		if err := json.Unmarshal(respBody, &value); err != nil {
+			return nil, fmt.Errorf("%w: parse upstream response: %v", ErrUpstreamError, err)
+		}
+		callResp.Content = []map[string]interface{}{{"type": "json", "data": value}}
 	}
 	return &callResp, nil
 }

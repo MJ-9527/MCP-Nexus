@@ -22,7 +22,7 @@ export default function Alerts() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unhandled' | 'handled' >('all');
-  const [ackId, setAckId] = useState<string | null>(null);
+  const [ackId, setAckId] = useState<string | number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,7 +36,7 @@ export default function Alerts() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function handleAck(id: string) {
+  async function handleAck(id: string | number) {
     setAckId(id);
     try {
       await api.acknowledgeAlert(id);

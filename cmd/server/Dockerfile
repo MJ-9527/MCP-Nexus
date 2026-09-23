@@ -9,6 +9,7 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates curl jq
 WORKDIR /app
 COPY --from=build /out/server /app/server
+COPY --from=build /src/db/clickhouse /app/db/clickhouse
 
 EXPOSE 8080
 

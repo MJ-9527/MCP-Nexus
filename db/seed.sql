@@ -1,93 +1,118 @@
-﻿-- Seed data for MCP-Nexus demo environment
--- Run after all migrations have been applied.
--- Idempotent: uses ON CONFLICT DO NOTHING where applicable.
+-- Seed data for MCP-Nexus demo environment
+-- Run after all migrations have been applied (cmd/db-migrate -seed db/seed.sql 或手工执行)。
+-- 幂等：全部使用 WHERE NOT EXISTS / ON CONFLICT，可重复执行。
+--
+-- 角色命名遵循《does/变量命名与合并规范.md》：
+--   platform_admin / tool_developer / agent_caller
+--
+-- 演示账号（密码均为 password123；下方为 bcrypt cost=10 哈希，禁止写明文）：
+--   admin      platform_admin
+--   dev01      tool_developer
+--   agent01    agent_caller
+--   restricted agent_caller（无任何工具授权，用于验证 403）
 
 -- 1. Roles
 INSERT INTO roles (name, description) VALUES
-    ('admin',    '平台管理员，拥有全部权限'),
-    ('developer','工具开发者，可注册和维护工具'),
-    ('caller',   'Agent 调用者，仅可调用已授权工具')
+    ('platform_admin', '平台管理员，拥有全部权限'),
+    ('tool_developer', '工具开发者，可注册和维护工具'),
+    ('agent_caller',   'Agent 调用者，仅可调用已授权工具')
 ON CONFLICT (name) DO NOTHING;
 
--- 2. Users (password for all: "password123")
--- Hash generated with bcrypt cost 10
-INSERT INTO users (username, password_hash, status) VALUES
-    ('admin',     'password123', 'active'),
-    ('dev01',     'password123', 'active'),
-    ('agent01',   'password123', 'active'),
-    ('restricted','password123', 'active')
-ON CONFLICT (username) DO NOTHING;
+-- 2. Users (password for all: "password123", bcrypt hash)
+INSERT INTO users (username, password_hash, status)
+SELECT 'admin', '$2a$10$SUc114j.T/VDrNybR75iSenWIYwa3oSJzGRl/iU.Cl6I3Bx2Elob.', 'active'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin');
+INSERT INTO users (username, password_hash, status)
+SELECT 'dev01', '$2a$10$SUc114j.T/VDrNybR75iSenWIYwa3oSJzGRl/iU.Cl6I3Bx2Elob.', 'active'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'dev01');
+INSERT INTO users (username, password_hash, status)
+SELECT 'agent01', '$2a$10$SUc114j.T/VDrNybR75iSenWIYwa3oSJzGRl/iU.Cl6I3Bx2Elob.', 'active'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'agent01');
+INSERT INTO users (username, password_hash, status)
+SELECT 'restricted', '$2a$10$SUc114j.T/VDrNybR75iSenWIYwa3oSJzGRl/iU.Cl6I3Bx2Elob.', 'active'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'restricted');
 
 -- 3. User-role assignments
--- admin -> admin, dev01 -> developer, agent01 -> caller, restricted -> caller
-WITH admin_id AS (SELECT id FROM users WHERE username = 'admin'),
-     dev_id  AS (SELECT id FROM users WHERE username = 'dev01'),
-     agent_id AS (SELECT id FROM users WHERE username = 'agent01'),
-     restr_id AS (SELECT id FROM users WHERE username = 'restricted'),
-     admin_role AS (SELECT id FROM roles WHERE name = 'admin'),
-     dev_role  AS (SELECT id FROM roles WHERE name = 'developer'),
-     caller_role AS (SELECT id FROM roles WHERE name = 'caller')
 INSERT INTO user_roles (user_id, role_id)
-SELECT admin_id.id, admin_role.id FROM admin_id, admin_role
-UNION ALL
-SELECT dev_id.id, dev_role.id FROM dev_id, dev_role
-UNION ALL
-SELECT agent_id.id, caller_role.id FROM agent_id, caller_role
-UNION ALL
-SELECT restr_id.id, caller_role.id FROM restr_id, caller_role
-ON CONFLICT DO NOTHING;
+SELECT u.id, r.id FROM users u JOIN roles r ON r.name = 'platform_admin'
+WHERE u.username = 'admin'
+  AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = r.id);
+INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, r.id FROM users u JOIN roles r ON r.name = 'tool_developer'
+WHERE u.username = 'dev01'
+  AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = r.id);
+INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, r.id FROM users u JOIN roles r ON r.name = 'agent_caller'
+WHERE u.username IN ('agent01', 'restricted')
+  AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = r.id);
 
--- 4. MCP Servers
-INSERT INTO mcp_servers (name, description, endpoint, version, owner_id, status, health_status) VALUES
-    ('demo-db-server', '演示数据库 MCP Server — 提供脱敏销售数据查询', 'http://localhost:9001', '1.0.0',
-        (SELECT id FROM users WHERE username = 'dev01'), 'active', 'online'),
-    ('demo-file-server', '演示文件系统 MCP Server', 'http://localhost:9002', '1.0.0',
-        (SELECT id FROM users WHERE username = 'dev01'), 'active', 'online')
-ON CONFLICT (name) DO NOTHING;
+-- 4. MCP Servers（端口与 deploy/docker-compose.yml 中 demo-service 的宿主映射一致）
+INSERT INTO mcp_servers (name, description, endpoint, version, owner_id, status, health_status)
+SELECT 'demo-db-server', '演示 MCP Server — 销售/客户查询与文件、HTTP、敏感操作示例',
+       'http://demo-service:8081', '1.0.0',
+       (SELECT id FROM users WHERE username = 'dev01'), 'active', 'unknown'
+WHERE NOT EXISTS (SELECT 1 FROM mcp_servers WHERE name = 'demo-db-server');
 
--- 5. MCP Tools
-INSERT INTO mcp_tools (server_id, name, description, category, tags, input_schema, version, published, health_status) VALUES
-    ((SELECT id FROM mcp_servers WHERE name = 'demo-db-server'),
-     'query_sales', '查询脱敏销售数据', 'database', ARRAY['sales', 'report'],
-     '{"type":"object","properties":{"month":{"type":"string","description":"月份，格式 YYYY-MM"},"region":{"type":"string","description":"区域名称"}},"required":["month"]}'::jsonb,
-     '1.0.0', true, 'online'),
+-- 已存在的旧记录（如早期 seed 指向 9001）一并修正
+UPDATE mcp_servers
+SET endpoint = 'http://demo-service:8081', status = 'active', updated_at = NOW()
+WHERE name = 'demo-db-server' AND endpoint <> 'http://demo-service:8081';
 
-    ((SELECT id FROM mcp_servers WHERE name = 'demo-db-server'),
-     'list_products', '列出所有产品（脱敏）', 'database', ARRAY['products', 'catalog'],
-     '{"type":"object","properties":{"category":{"type":"string","description":"产品分类"}},"required":[]}'::jsonb,
-     '1.0.0', true, 'online'),
+-- 5. MCP Tools（与 examples/demo-service 暴露的工具一一对应）
+INSERT INTO mcp_tools (server_id, name, description, category, tags, input_schema, version, published, health_status)
+SELECT s.id, v.name, v.description, v.category, v.tags, v.schema::jsonb, '1.0.0', true, 'online'
+FROM mcp_servers s
+CROSS JOIN (VALUES
+    ('query_sales',     '查询脱敏销售数据',           'database', ARRAY['sales','report'],
+     '{"type":"object","properties":{"month":{"type":"string","description":"月份 YYYY-MM"},"region":{"type":"string","description":"区域"}},"required":["month"]}'),
+    ('query_customer',  '查询脱敏客户数据',           'database', ARRAY['customer','database'],
+     '{"type":"object","properties":{"region":{"type":"string"},"limit":{"type":"integer"}}}'),
+    ('list_products',   '列出所有产品（脱敏）',        'database', ARRAY['products','catalog'],
+     '{"type":"object","properties":{"category":{"type":"string"}}}'),
+    ('read_file',       '读取服务目录内的示例文件',    'file',     ARRAY['file','demo'],
+     '{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}'),
+    ('fetch_url',       '请求白名单内 URL 并脱敏响应', 'http',     ARRAY['http','fetch'],
+     '{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}'),
+    ('delete_customer', '删除客户记录（敏感操作，需 API Key）', 'database', ARRAY['customer','sensitive'],
+     '{"type":"object","properties":{"customer_id":{"type":"integer"}},"required":["customer_id"]}')
+) AS v(name, description, category, tags, schema)
+WHERE s.name = 'demo-db-server'
+  AND NOT EXISTS (SELECT 1 FROM mcp_tools t WHERE t.server_id = s.id AND t.name = v.name);
 
-    ((SELECT id FROM mcp_servers WHERE name = 'demo-db-server'),
-     'delete_customer', '删除客户记录（敏感操作）', 'database', ARRAY['customer', 'sensitive'],
-     '{"type":"object","properties":{"customer_id":{"type":"integer","description":"客户 ID"}},"required":["customer_id"]}'::jsonb,
-     '1.0.0', true, 'online'),
+-- 6. Tool permissions（角色维度：网关 RBAC 经 roles.name 关联）
+-- platform_admin：全部工具 view+call
+INSERT INTO tool_permissions (tool_id, role_id, action)
+SELECT t.id, r.id, a.action
+FROM mcp_tools t
+JOIN mcp_servers s ON s.id = t.server_id AND s.name = 'demo-db-server'
+JOIN roles r ON r.name = 'platform_admin'
+CROSS JOIN (VALUES ('view'), ('call')) AS a(action)
+WHERE NOT EXISTS (
+    SELECT 1 FROM tool_permissions p
+    WHERE p.tool_id = t.id AND p.role_id = r.id AND p.action = a.action
+);
 
-    ((SELECT id FROM mcp_servers WHERE name = 'demo-file-server'),
-     'read_file', '读取文件内容', 'file', ARRAY['file', 'read'],
-     '{"type":"object","properties":{"path":{"type":"string","description":"文件绝对路径"}},"required":["path"]}'::jsonb,
-     '1.0.0', true, 'online')
-ON CONFLICT DO NOTHING;
+-- agent_caller：非敏感工具 view+call；delete_customer 不授权（用于验证 403）
+INSERT INTO tool_permissions (tool_id, role_id, action)
+SELECT t.id, r.id, a.action
+FROM mcp_tools t
+JOIN mcp_servers s ON s.id = t.server_id AND s.name = 'demo-db-server'
+JOIN roles r ON r.name = 'agent_caller'
+CROSS JOIN (VALUES ('view'), ('call')) AS a(action)
+WHERE t.name IN ('query_sales', 'query_customer', 'list_products', 'read_file', 'fetch_url')
+  AND NOT EXISTS (
+    SELECT 1 FROM tool_permissions p
+    WHERE p.tool_id = t.id AND p.role_id = r.id AND p.action = a.action
+);
 
--- 6. Tool permissions
--- admin can do everything on all tools
--- agent01 can call query_sales and list_products but NOT delete_customer
--- restricted caller cannot call any sensitive tools
-WITH agent_id AS (SELECT id FROM users WHERE username = 'agent01'),
-     admin_id AS (SELECT id FROM users WHERE username = 'admin'),
-     query_sales_id AS (SELECT id FROM mcp_tools WHERE name = 'query_sales'),
-     list_prod_id   AS (SELECT id FROM mcp_tools WHERE name = 'list_products'),
-     delete_id      AS (SELECT id FROM mcp_tools WHERE name = 'delete_customer')
+-- 7. 用户直授（agent01 额外可调用 query_sales；与角色授权并存，验证授权并集）
 INSERT INTO tool_permissions (tool_id, user_id, action)
-SELECT query_sales_id.id, agent_id.id, 'call' FROM query_sales_id, agent_id
-UNION ALL
-SELECT list_prod_id.id, agent_id.id, 'call' FROM list_prod_id, agent_id
-UNION ALL
-SELECT query_sales_id.id, admin_id.id, 'call' FROM query_sales_id, admin_id
-UNION ALL
-SELECT list_prod_id.id, admin_id.id, 'call' FROM list_prod_id, admin_id
-UNION ALL
-SELECT delete_id.id, admin_id.id, 'call' FROM delete_id, admin_id
-ON CONFLICT DO NOTHING;
-
--- Note: delete_customer has NO caller permission for agent01 or restricted users.
--- This is the intended setup for testing 403 access denial.
+SELECT t.id, u.id, 'call'
+FROM mcp_tools t
+JOIN mcp_servers s ON s.id = t.server_id AND s.name = 'demo-db-server'
+JOIN users u ON u.username = 'agent01'
+WHERE t.name = 'query_sales'
+  AND NOT EXISTS (
+    SELECT 1 FROM tool_permissions p
+    WHERE p.tool_id = t.id AND p.user_id = u.id AND p.action = 'call'
+);

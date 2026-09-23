@@ -39,8 +39,9 @@ export default function AuditLogs() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = logs.filter(l => {
-    const matchFilter = filter === 'error' ? l.status_code >= 400
-      : filter === 'success' ? l.status_code < 400 : true;
+    const code = l.status_code ?? l.http_status ?? (l.status === 'success' ? 200 : 500);
+    const matchFilter = filter === 'error' ? code >= 400
+      : filter === 'success' ? code < 400 : true;
     const matchSearch = search
       ? (l.path?.toLowerCase().includes(search.toLowerCase())
         || l.method?.toLowerCase().includes(search.toLowerCase())
@@ -49,8 +50,8 @@ export default function AuditLogs() {
     return matchFilter && matchSearch;
   });
 
-  const successCount = logs.filter(l => l.status_code < 400).length;
-  const errorCount = logs.filter(l => l.status_code >= 400).length;
+  const successCount = logs.filter(l => (l.status_code ?? l.http_status ?? 500) < 400).length;
+  const errorCount = logs.filter(l => (l.status_code ?? l.http_status ?? 500) >= 400).length;
 
   const filterButtons = [
     { key: 'all', label: `全部 (${logs.length})` },
@@ -118,16 +119,16 @@ export default function AuditLogs() {
                 {filtered.map(log => (
                   <tr key={log.request_id} className='hover:bg-slate-50 transition-colors'>
                     <td className='px-4 py-3 text-slate-500 whitespace-nowrap'>
-                      {new Date(log.timestamp).toLocaleString('zh-CN')}
+                      {new Date(log.timestamp || log.created_at || '').toLocaleString('zh-CN')}
                     </td>
                     <td className='px-4 py-3'>
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-mono font-semibold ${METHOD_COLORS[log.method] || METHOD_COLORS.DEFAULT}`}>
-                        {log.method}
+                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-mono font-semibold ${METHOD_COLORS[log.method || 'CALL'] || METHOD_COLORS.DEFAULT}`}>
+                        {log.method || 'CALL'}
                       </span>
                     </td>
-                    <td className='px-4 py-3 font-mono text-xs text-slate-600 max-w-[240px] truncate'>{log.path}</td>
-                    <td className='px-4 py-3'><StatusBadge code={log.status_code} /></td>
-                    <td className='px-4 py-3 text-slate-500 whitespace-nowrap'>{log.latency_ms} ms</td>
+                    <td className='px-4 py-3 font-mono text-xs text-slate-600 max-w-[240px] truncate'>{log.path || log.tool_name || '-'}</td>
+                    <td className='px-4 py-3'><StatusBadge code={log.status_code ?? log.http_status ?? 500} /></td>
+                    <td className='px-4 py-3 text-slate-500 whitespace-nowrap'>{log.latency_ms ?? log.duration_ms ?? 0} ms</td>
                     <td className='px-4 py-3 text-slate-600'>{log.username || '-'}</td>
                     <td className='px-4 py-3 text-xs text-slate-400 font-mono'>{log.request_id.slice(0, 8)}...</td>
                   </tr>

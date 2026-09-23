@@ -42,3 +42,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	respondSuccess(c, result)
 }
+
+// Me GET /api/auth/me 返回当前令牌对应的登录身份（对应 API 文档 2.3）。
+// 身份信息以 JWT 注入的 user_id/username/agent_role 为准，不信任请求头。
+func (h *AuthHandler) Me(c *gin.Context) {
+	respondSuccess(c, gin.H{
+		"id":       c.GetInt64("user_id"),
+		"username": c.GetString("username"),
+		"role":     c.GetString("agent_role"),
+	})
+}

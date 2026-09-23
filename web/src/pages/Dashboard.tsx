@@ -21,9 +21,10 @@ function StatCard({ label, value, unit, color, icon }: { label: string; value: s
 
 function TrendBar({ day, calls, max }: { day: string; calls: number; max: number }) {
   const pct = max > 0 ? (calls / max) * 100 : 0;
+  const label = day ? day.slice(5, 10) : '--';
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xs text-slate-400 w-12 shrink-0">{day.slice(5)}</span>
+      <span className="text-xs text-slate-400 w-12 shrink-0">{label}</span>
       <div className="flex-1 h-6 bg-slate-100 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-700"
@@ -111,7 +112,7 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-3">
               {(data.top_tools || []).slice(0, 5).map((t: any, i: number) => (
-                <div key={t.tool_id} className="flex items-center gap-4">
+                <div key={t.tool_id || t.tool_name || i} className="flex items-center gap-4">
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                     i === 0 ? 'bg-amber-100 text-amber-600' : i === 1 ? 'bg-slate-100 text-slate-500' : i === 2 ? 'bg-orange-50 text-orange-500' : 'bg-slate-50 text-slate-400'
                   }`}>{i + 1}</span>
@@ -137,8 +138,8 @@ export default function Dashboard() {
             <div className="text-center py-8 text-slate-400 text-sm">暂无趋势数据</div>
           ) : (
             <div className="space-y-2">
-              {(data.daily_trend || []).map((d: any) => (
-                <TrendBar key={d.date} day={d.date} calls={d.calls} max={maxCalls} />
+              {(data.daily_trend || []).map((d: any, index: number) => (
+                <TrendBar key={d.time || d.date || index} day={d.time || d.date || ''} calls={d.calls} max={maxCalls} />
               ))}
             </div>
           )}

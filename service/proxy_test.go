@@ -98,6 +98,9 @@ func TestListToolsFiltersOfflineServerAndUnpublishedTool(t *testing.T) {
 func TestCallToolSuccessPassthrough(t *testing.T) {
 	svc, toolRepo, serverRepo := newFixture(t)
 	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tools/query_sales/call" {
+			t.Fatalf("调用路径错误: %s", r.URL.Path)
+		}
 		if r.Header.Get("request_id") == "" {
 			t.Error("request_id 未透传到下游")
 		}

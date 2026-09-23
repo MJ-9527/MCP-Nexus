@@ -27,6 +27,36 @@ function HealthBadge({ status }: { status: string }) {
 
 function ToolCard({ tool }: { tool: Tool }) {
   const [expanded, setExpanded] = useState(false);
+  const [calling, setCalling] = useState(false);
+  const [callResult, setCallResult] = useState<{ success: boolean; data: any; error?: string } | null>(null);
+  const [params, setParams] = useState<Record<string, any>>({});
+
+  const handleCall = async () => {
+    setCalling(true);
+    setCallResult(null);
+    try {
+      const result = await api.callTool(tool.name, params);
+      setCallResult({ success: true, data: result });
+    } catch (e: any) {
+      setCallResult({ success: false, data: null, error: e.message });
+    } finally {
+      setCalling(false);
+    }
+  };
+
+  const parseSchema = () => {
+    try {
+      return typeof tool.input_schema === 'string'
+        ? JSON.parse(tool.input_schema || '{}')
+        : (tool.input_schema || {});
+    } catch {
+      return {};
+    }
+  };
+
+  const schema = parseSchema();
+  const schemaProps = schema?.properties || {};
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 hover:shadow-lg hover:border-indigo-200 transition-all duration-200 overflow-hidden group">
       <div className="p-5">
@@ -60,14 +90,93 @@ function ToolCard({ tool }: { tool: Tool }) {
         </div>
       </div>
       {expanded && (
-        <div className="px-5 pb-5 border-t border-slate-100 pt-4 animate-fade-in">
-          <div className="mb-3">
+        <div className="px-5 pb-5 border-t border-slate-100 pt-4 animate-fade-in space-y-4">
+          {/* Schema 展示 */}
+          <div>
             <div className="text-xs font-medium text-slate-500 mb-1.5">输入参数 Schema</div>
             <pre className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 overflow-x-auto font-mono">
-              {JSON.stringify(JSON.parse(tool.input_schema || '{}'), null, 2)}
+              {(() => {
+                try {
+                  const value = typeof tool.input_schema === 'string'
+                    ? JSON.parse(tool.input_schema || '{}')
+                    : (tool.input_schema || {});
+                  return JSON.stringify(value, null, 2);
+                } catch {
+                  return typeof tool.input_schema === 'string'
+                    ? (tool.input_schema || '无参数定义')
+                    : JSON.stringify(tool.input_schema || {}, null, 2);
+                }
+              })()}
             </pre>
           </div>
-          <div className="text-xs text-slate-400">
+
+          {/* 参数输入 */}
+          {Object.keys(schemaProps).length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-slate-500 mb-2">调用参数</div>
+              <div className="space-y-2">
+                {Object.entries(schemaProps).map(([key, prop]: [string, any]) => (
+                  <div key={key}>
+                    <label className="text-xs text-slate-600 block mb-1">
+                      {key}
+                      {schema.required?.includes(key) && <span className="text-red-500 ml-1">*</span>}
+                      {prop.description && <span className="text-slate-400 ml-1">- {prop.description}</span>}
+                    </label>
+                    <input
+                      type={prop.type === 'number' ? 'number' : 'text'}
+                      placeholder={prop.type === 'number' ? '输入数字' : '输入值'}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      onChange={(e) => {
+                        const rawValue = e.target.value;
+                        if (prop.type === 'number') {
+                          // 只有当用户输入了值且不为空时才转换为数字
+                          const value = rawValue === '' ? undefined : Number(rawValue);
+                          if (value === undefined) {
+                            const newParams = { ...params };
+                            delete newParams[key];
+                            setParams(newParams);
+                          } else {
+                            setParams({ ...params, [key]: value });
+                          }
+                        } else {
+                          setParams({ ...params, [key]: rawValue });
+                        }
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 调用按钮 */}
+          <div className="flex gap-2">
+            <button
+              onClick={handleCall}
+              disabled={calling}
+              className="px-4 py-2 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {calling ? '调用中...' : '🚀 调用工具'}
+            </button>
+          </div>
+
+          {/* 调用结果 */}
+          {callResult && (
+            <div>
+              <div className="text-xs font-medium text-slate-500 mb-1.5">调用结果</div>
+              <pre className={`rounded-lg p-3 text-xs overflow-x-auto font-mono ${
+                callResult.success
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-red-50 text-red-700 border border-red-200'
+              }`}>
+                {callResult.success
+                  ? JSON.stringify(callResult.data, null, 2)
+                  : `错误: ${callResult.error}`}
+              </pre>
+            </div>
+          )}
+
+          <div className="text-xs text-slate-400 pt-2 border-t border-slate-100">
             分类: {tool.category} · 状态: {tool.published ? '已发布' : '未发布'}
           </div>
         </div>

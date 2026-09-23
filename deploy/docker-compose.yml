@@ -37,17 +37,17 @@ services:
   # B14：审计分析存储。网关会把同一批审计记录额外投递到这里。
   # 初始化脚本与监听配置分别挂到 initdb 与 config.d，首次启动生效。
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8-alpine
+    image: clickhouse/clickhouse-server:26.8-alpine
     container_name: mcp-nexus-clickhouse
     restart: unless-stopped
     environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-mcp_nexus}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-mcp_nexus}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-change-me}
+      CLICKHOUSE_DB: mcp_nexus
+      CLICKHOUSE_USER: mcp_nexus
+      CLICKHOUSE_PASSWORD: mcp-nexus-local-dev
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
-      - "8123:8123"   # HTTP，网关审计写入
-      - "9000:9000"   # 原生协议
+      - "18123:8123"   # HTTP，网关审计写入
+      - "19000:9000"   # 原生协议
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ../db/clickhouse/config/listen.xml:/etc/clickhouse-server/config.d/listen.xml:ro
@@ -64,10 +64,10 @@ services:
       context: ..
       dockerfile: examples/demo-service/Dockerfile
     ports:
-      - "8081:8081"
+      - "18081:8081"
     environment:
       PORT: "8081"
-      DATABASE_URL: postgres://mcp_user:${POSTGRES_PASSWORD:-change-me}@postgres:5432/mcp_platform?sslmode=disable
+      DATABASE_URL: postgres://mcp_user:123456@postgres:5432/mcp_platform?sslmode=disable
       # 敏感工具（delete_customer）鉴权用的 API Key
       API_KEY: "demo-api-key"
     depends_on:
@@ -89,7 +89,7 @@ services:
       context: ..
       dockerfile: examples/skills/adapter/Dockerfile
     ports:
-      - "8082:8082"
+      - "18082:8082"
     environment:
       PORT: "8082"
     depends_on:
@@ -110,19 +110,19 @@ services:
       context: ..
       dockerfile: cmd/server/Dockerfile
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       PORT: "8080"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: mcp_platform
       POSTGRES_USER: mcp_user
-      POSTGRES_PASSWORD: change-me
+      POSTGRES_PASSWORD: "123456"
       REDIS_ADDR: redis:6379
       CLICKHOUSE_ADDR: clickhouse:8123
-      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-mcp_nexus}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-mcp_nexus}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-change-me}
+      CLICKHOUSE_DATABASE: mcp_nexus
+      CLICKHOUSE_USER: mcp_nexus
+      CLICKHOUSE_PASSWORD: mcp-nexus-local-dev
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,6 +143,25 @@ services:
       interval: 5s
       timeout: 3s
       retries: 15
+
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+      args:
+        VITE_API_URL: http://localhost:18080
+    container_name: mcp-nexus-web
+    restart: unless-stopped
+    ports:
+      - "15173:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   postgres_data:

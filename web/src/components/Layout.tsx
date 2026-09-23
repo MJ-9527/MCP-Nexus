@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 const navItems = [
   { to: '/tools', label: '工具市场', icon: '◆' },
   { to: '/dashboard', label: '数据分析', icon: '📊' },
+  { to: '/import', label: '工具导入', icon: '📥' },
   { to: '/alerts', label: '告警中心', icon: '🔔' },
   { to: '/config', label: '接入配置', icon: '⚙️' },
   { to: '/audit', label: '审计日志', icon: '📋' },
